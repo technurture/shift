@@ -209,12 +209,19 @@ export default function Dashboard() {
                     </TableCell>
                     <TableCell>
                       {result.emails.length > 0 ? (
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 max-h-[120px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                           {result.emails.map(email => (
-                            <div key={email} className="flex items-center gap-2 text-sm text-muted-foreground group cursor-pointer hover:text-white">
-                              <Mail className="w-3 h-3" />
-                              {email}
-                              <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div key={email} className="flex items-center gap-2 text-sm text-muted-foreground group cursor-pointer hover:text-white py-0.5">
+                              <Mail className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{email}</span>
+                              <Copy 
+                                className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(email);
+                                  toast({ description: "Copied to clipboard" });
+                                }}
+                              />
                             </div>
                           ))}
                         </div>
