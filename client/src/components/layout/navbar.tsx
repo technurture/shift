@@ -1,15 +1,31 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { ScanLine, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import icon from "@assets/generated_images/app_icon_for_mailsift.png";
+import { api, type User } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 export function Navbar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const queryClient = useQueryClient();
 
-  const isLoggedIn = location.includes("/dashboard");
+  const { data: user } = useQuery<User>({
+    queryKey: ["currentUser"],
+    queryFn: () => api.getCurrentUser(),
+    retry: false,
+    enabled: location !== "/" && !location.includes("/auth"),
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: () => api.logout(),
+    onSuccess: () => {
+      queryClient.clear();
+      setLocation("/");
+    },
+  });
 
   useEffect(() => {
     const handleScroll = () => {
@@ -18,6 +34,8 @@ export function Navbar() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  const isLoggedIn = !!user;
 
   return (
     <nav
@@ -45,11 +63,10 @@ export function Navbar() {
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-8">
-            {!isLoggedIn && (
+            {!isLoggedIn && location === "/" && (
               <>
                 <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-white transition-colors">Features</a>
                 <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-white transition-colors">Pricing</a>
-                <a href="#how-it-works" className="text-sm font-medium text-muted-foreground hover:text-white transition-colors">How it works</a>
               </>
             )}
           </div>
@@ -58,12 +75,18 @@ export function Navbar() {
           <div className="hidden md:flex items-center gap-4">
             {isLoggedIn ? (
               <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">Welcome, User</span>
-                <Link href="/">
-                  <Button variant="outline" size="sm" className="border-white/10 hover:bg-white/5">
-                    Sign Out
-                  </Button>
-                </Link>
+                <span className="text-sm text-muted-foreground">
+                  {user.firstName} {user.lastName}
+                </span>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="border-white/10 hover:bg-white/5"
+                  onClick={() => logoutMutation.mutate()}
+                  disabled={logoutMutation.isPending}
+                >
+                  Sign Out
+                </Button>
               </div>
             ) : (
               <>
@@ -94,7 +117,7 @@ export function Navbar() {
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
         <div className="md:hidden absolute top-20 left-0 right-0 bg-background border-b border-white/10 p-4 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top-5">
-          {!isLoggedIn && (
+          {!isLoggedIn && location === "/" && (
             <>
               <a href="#features" className="text-lg font-medium text-muted-foreground hover:text-white" onClick={() => setIsMobileMenuOpen(false)}>Features</a>
               <a href="#pricing" className="text-lg font-medium text-muted-foreground hover:text-white" onClick={() => setIsMobileMenuOpen(false)}>Pricing</a>
@@ -102,9 +125,16 @@ export function Navbar() {
           )}
           <div className="h-px bg-white/10 my-2" />
           {isLoggedIn ? (
-            <Link href="/">
-              <Button variant="outline" className="w-full">Sign Out</Button>
-            </Link>
+            <Button 
+              variant="outline" 
+              className="w-full"
+              onClick={() => {
+                logoutMutation.mutate();
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              Sign Out
+            </Button>
           ) : (
             <>
               <Link href="/auth?mode=login" onClick={() => setIsMobileMenuOpen(false)}>

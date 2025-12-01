@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,28 +8,74 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
 import icon from "@assets/generated_images/app_icon_for_mailsift.png";
 import { Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AuthPage() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
   
-  // Parse query params manually since wouter doesn't support it natively easily
   const searchParams = new URLSearchParams(window.location.search);
   const mode = searchParams.get("mode") || "login";
   const defaultTab = mode === "signup" ? "signup" : "login";
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
-    // Mock network request
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    setLocation("/dashboard");
+    
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    
+    try {
+      await api.login({ email, password });
+      toast({
+        title: "Welcome back!",
+        description: "You've successfully signed in.",
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Login failed",
+        description: error.message || "Invalid credentials",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsLoading(true);
+    
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    const firstName = formData.get("firstName") as string;
+    const lastName = formData.get("lastName") as string;
+    
+    try {
+      await api.signup({ email, password, firstName, lastName });
+      toast({
+        title: "Account created!",
+        description: "Welcome to MailSift. Start extracting emails now.",
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Signup failed",
+        description: error.message || "Failed to create account",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 relative overflow-hidden">
-      {/* Background Decorations */}
       <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-primary/10 blur-[120px]" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-secondary/5 blur-[120px]" />
 
@@ -51,7 +97,7 @@ export default function AuthPage() {
           </TabsList>
           
           <TabsContent value="login">
-            <form onSubmit={handleAuth}>
+            <form onSubmit={handleLogin}>
               <CardHeader>
                 <CardTitle>Welcome back</CardTitle>
                 <CardDescription>Enter your credentials to access your dashboard.</CardDescription>
@@ -59,23 +105,43 @@ export default function AuthPage() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="name@company.com" className="bg-background/50 border-white/10" required />
+                  <Input 
+                    id="email" 
+                    name="email"
+                    type="email" 
+                    placeholder="name@company.com" 
+                    className="bg-background/50 border-white/10" 
+                    required 
+                    data-testid="input-email"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
-                  <Input id="password" type="password" className="bg-background/50 border-white/10" required />
+                  <Input 
+                    id="password" 
+                    name="password"
+                    type="password" 
+                    className="bg-background/50 border-white/10" 
+                    required 
+                    data-testid="input-password"
+                  />
                 </div>
               </CardContent>
               <CardFooter>
-                <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={isLoading}>
-                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Sign In"}
+                <Button 
+                  type="submit" 
+                  className="w-full bg-primary hover:bg-primary/90" 
+                  disabled={isLoading}
+                  data-testid="button-login"
+                >
+                  {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in...</> : "Sign In"}
                 </Button>
               </CardFooter>
             </form>
           </TabsContent>
 
           <TabsContent value="signup">
-            <form onSubmit={handleAuth}>
+            <form onSubmit={handleSignup}>
               <CardHeader>
                 <CardTitle>Create an account</CardTitle>
                 <CardDescription>Start extracting emails for free today.</CardDescription>
@@ -84,25 +150,60 @@ export default function AuthPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="first-name">First name</Label>
-                    <Input id="first-name" placeholder="John" className="bg-background/50 border-white/10" required />
+                    <Input 
+                      id="first-name" 
+                      name="firstName"
+                      placeholder="John" 
+                      className="bg-background/50 border-white/10" 
+                      required 
+                      data-testid="input-firstName"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="last-name">Last name</Label>
-                    <Input id="last-name" placeholder="Doe" className="bg-background/50 border-white/10" required />
+                    <Input 
+                      id="last-name" 
+                      name="lastName"
+                      placeholder="Doe" 
+                      className="bg-background/50 border-white/10" 
+                      required 
+                      data-testid="input-lastName"
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email-signup">Email</Label>
-                  <Input id="email-signup" type="email" placeholder="name@company.com" className="bg-background/50 border-white/10" required />
+                  <Input 
+                    id="email-signup" 
+                    name="email"
+                    type="email" 
+                    placeholder="name@company.com" 
+                    className="bg-background/50 border-white/10" 
+                    required 
+                    data-testid="input-email-signup"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password-signup">Password</Label>
-                  <Input id="password-signup" type="password" className="bg-background/50 border-white/10" required />
+                  <Input 
+                    id="password-signup" 
+                    name="password"
+                    type="password" 
+                    className="bg-background/50 border-white/10" 
+                    required 
+                    minLength={6}
+                    data-testid="input-password-signup"
+                  />
                 </div>
               </CardContent>
               <CardFooter>
-                <Button type="submit" className="w-full bg-secondary text-black hover:bg-secondary/90" disabled={isLoading}>
-                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Create Account"}
+                <Button 
+                  type="submit" 
+                  className="w-full bg-secondary text-black hover:bg-secondary/90" 
+                  disabled={isLoading}
+                  data-testid="button-signup"
+                >
+                  {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating account...</> : "Create Account"}
                 </Button>
               </CardFooter>
             </form>
