@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
 import icon from "@assets/generated_images/app_icon_for_mailsift.png";
-import { Loader2, ArrowLeft, Mail, KeyRound, CheckCircle } from "lucide-react";
+import { Loader2, ArrowLeft, Mail, KeyRound, CheckCircle, Eye, EyeOff } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -18,6 +18,10 @@ export default function AuthPage() {
   const [view, setView] = useState<AuthView>("login");
   const [email, setEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState(["", "", "", "", "", ""]);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { toast } = useToast();
   
   const searchParams = new URLSearchParams(window.location.search);
@@ -312,14 +316,30 @@ export default function AuthPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input 
-                  id="password" 
-                  name="password"
-                  type="password" 
-                  className="bg-background/50 border-white/10 min-h-[44px]" 
-                  required 
-                  data-testid="input-password"
-                />
+                <div className="relative">
+                  <Input 
+                    id="password" 
+                    name="password"
+                    type={showLoginPassword ? "text" : "password"} 
+                    className="bg-background/50 border-white/10 min-h-[44px] pr-10" 
+                    required 
+                    data-testid="input-password"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    data-testid="button-toggle-password"
+                  >
+                    {showLoginPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
               </div>
               <Button
                 type="button"
@@ -401,15 +421,31 @@ export default function AuthPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password-signup">Password</Label>
-                <Input 
-                  id="password-signup" 
-                  name="password"
-                  type="password" 
-                  className="bg-background/50 border-white/10 min-h-[44px]" 
-                  required 
-                  minLength={6}
-                  data-testid="input-password-signup"
-                />
+                <div className="relative">
+                  <Input 
+                    id="password-signup" 
+                    name="password"
+                    type={showSignupPassword ? "text" : "password"} 
+                    className="bg-background/50 border-white/10 min-h-[44px] pr-10" 
+                    required 
+                    minLength={6}
+                    data-testid="input-password-signup"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowSignupPassword(!showSignupPassword)}
+                    data-testid="button-toggle-password-signup"
+                  >
+                    {showSignupPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
             <CardFooter className="flex flex-col gap-4">
@@ -537,27 +573,59 @@ export default function AuthPage() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="new-password">New Password</Label>
-                  <Input 
-                    id="new-password" 
-                    name="newPassword"
-                    type="password" 
-                    className="bg-background/50 border-white/10 min-h-[44px]" 
-                    required 
-                    minLength={6}
-                    data-testid="input-new-password"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="new-password" 
+                      name="newPassword"
+                      type={showNewPassword ? "text" : "password"} 
+                      className="bg-background/50 border-white/10 min-h-[44px] pr-10" 
+                      required 
+                      minLength={6}
+                      data-testid="input-new-password"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      data-testid="button-toggle-new-password"
+                    >
+                      {showNewPassword ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">Confirm Password</Label>
-                  <Input 
-                    id="confirm-password" 
-                    name="confirmPassword"
-                    type="password" 
-                    className="bg-background/50 border-white/10 min-h-[44px]" 
-                    required 
-                    minLength={6}
-                    data-testid="input-confirm-password"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="confirm-password" 
+                      name="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"} 
+                      className="bg-background/50 border-white/10 min-h-[44px] pr-10" 
+                      required 
+                      minLength={6}
+                      data-testid="input-confirm-password"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      data-testid="button-toggle-confirm-password"
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>

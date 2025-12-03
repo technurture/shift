@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Loader2, User, Lock, Trash2, ArrowLeft, Shield, CheckCircle } from "lucide-react";
+import { Loader2, User, Lock, Trash2, ArrowLeft, Shield, CheckCircle, Eye, EyeOff } from "lucide-react";
 import { api, type User as UserType } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,6 +32,10 @@ export default function Settings() {
   const [passwordData, setPasswordData] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
 
   const { data: user, isLoading: userLoading, error: userError } = useQuery<UserType>({
     queryKey: ["currentUser"],
@@ -310,37 +314,85 @@ export default function Settings() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="currentPassword">Current Password</Label>
-                    <Input 
-                      id="currentPassword" 
-                      type="password"
-                      value={passwordData.currentPassword}
-                      onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                      className="bg-background/50 border-border/50 min-h-[44px]"
-                      data-testid="input-current-password"
-                    />
+                    <div className="relative">
+                      <Input 
+                        id="currentPassword" 
+                        type={showCurrentPassword ? "text" : "password"}
+                        value={passwordData.currentPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                        className="bg-background/50 border-border/50 min-h-[44px] pr-10"
+                        data-testid="input-current-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        data-testid="button-toggle-current-password"
+                      >
+                        {showCurrentPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="newPassword">New Password</Label>
-                    <Input 
-                      id="newPassword" 
-                      type="password"
-                      value={passwordData.newPassword}
-                      onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                      className="bg-background/50 border-border/50 min-h-[44px]"
-                      placeholder="Minimum 6 characters"
-                      data-testid="input-new-password"
-                    />
+                    <div className="relative">
+                      <Input 
+                        id="newPassword" 
+                        type={showNewPassword ? "text" : "password"}
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                        className="bg-background/50 border-border/50 min-h-[44px] pr-10"
+                        placeholder="Minimum 6 characters"
+                        data-testid="input-new-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        data-testid="button-toggle-new-password"
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                    <Input 
-                      id="confirmPassword" 
-                      type="password"
-                      value={passwordData.confirmPassword}
-                      onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                      className="bg-background/50 border-border/50 min-h-[44px]"
-                      data-testid="input-confirm-new-password"
-                    />
+                    <div className="relative">
+                      <Input 
+                        id="confirmPassword" 
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={passwordData.confirmPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                        className="bg-background/50 border-border/50 min-h-[44px] pr-10"
+                        data-testid="input-confirm-new-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        data-testid="button-toggle-confirm-new-password"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
                 <CardFooter>
@@ -410,15 +462,31 @@ export default function Settings() {
                       <Label htmlFor="deletePassword" className="text-sm font-medium">
                         Enter your password to confirm
                       </Label>
-                      <Input
-                        id="deletePassword"
-                        type="password"
-                        value={deletePassword}
-                        onChange={(e) => setDeletePassword(e.target.value)}
-                        className="mt-2 min-h-[44px]"
-                        placeholder="Your password"
-                        data-testid="input-delete-password"
-                      />
+                      <div className="relative mt-2">
+                        <Input
+                          id="deletePassword"
+                          type={showDeletePassword ? "text" : "password"}
+                          value={deletePassword}
+                          onChange={(e) => setDeletePassword(e.target.value)}
+                          className="min-h-[44px] pr-10"
+                          placeholder="Your password"
+                          data-testid="input-delete-password"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                          onClick={() => setShowDeletePassword(!showDeletePassword)}
+                          data-testid="button-toggle-delete-password"
+                        >
+                          {showDeletePassword ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                     <AlertDialogFooter>
                       <AlertDialogCancel 
