@@ -1,9 +1,27 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { extractEmailsFromUrl } from "./lib/email-extractor";
+import { signToken, verifyToken } from "./lib/jwt";
+
+async function getUserIdFromRequest(req: Request): Promise<string | null> {
+  if (req.session?.userId) {
+    return req.session.userId;
+  }
+  
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+    if (decoded) {
+      return decoded.userId;
+    }
+  }
+  
+  return null;
+}
 
 // Plan limits configuration
 const PLAN_LIMITS = {
@@ -17,7 +35,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // Auth Routes
+  // Auth Routes (Session-based for web clients)
   app.post("/api/auth/signup", async (req, res) => {
     try {
       const { email, password, firstName, lastName } = insertUserSchema.parse(req.body);
@@ -39,7 +57,7 @@ export async function registerRoutes(
         lastName,
       });
       
-      // Set session
+      // Set session for web
       req.session.userId = user.id;
       
       // Don't send password back
@@ -70,11 +88,74 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Invalid credentials" });
       }
       
-      // Set session
+      // Set session for web
       req.session.userId = user.id;
       
       const { password: _, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Login failed" });
+    }
+  });
+  
+  // Mobile Auth Routes (JWT-based for mobile clients)
+  app.post("/api/mobile/auth/signup", async (req, res) => {
+    try {
+      const { email, password, firstName, lastName } = insertUserSchema.parse(req.body);
+      
+      // Check if user exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+      
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Create user
+      const user = await storage.createUser({
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+      });
+      
+      // Generate JWT token for mobile
+      const token = signToken(user.id);
+      
+      // Don't send password back
+      const { password: _, ...userWithoutPassword } = user;
+      res.json({ ...userWithoutPassword, token });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Failed to create account" });
+    }
+  });
+  
+  app.post("/api/mobile/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password required" });
+      }
+      
+      // Get user
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      // Check password
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      // Generate JWT token for mobile
+      const token = signToken(user.id);
+      
+      const { password: _, ...userWithoutPassword } = user;
+      res.json({ ...userWithoutPassword, token });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Login failed" });
     }
@@ -90,11 +171,12 @@ export async function registerRoutes(
   });
   
   app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.userId) {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
     
-    const user = await storage.getUser(req.session.userId);
+    const user = await storage.getUser(userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -105,7 +187,8 @@ export async function registerRoutes(
   
   // Extraction Routes
   app.post("/api/extract", async (req, res) => {
-    if (!req.session.userId) {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
     
@@ -117,7 +200,7 @@ export async function registerRoutes(
       }
       
       // Check plan limits
-      const limits = await storage.getUserPlanLimits(req.session.userId);
+      const limits = await storage.getUserPlanLimits(userId);
       const planLimit = PLAN_LIMITS[limits.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
       
       if (limits.linksScanned >= planLimit.links) {
@@ -133,7 +216,7 @@ export async function registerRoutes(
       if (result.error) {
         // Still create extraction record with failed status
         const extraction = await storage.createExtraction({
-          userId: req.session.userId,
+          userId,
           url,
           status: "failed",
           emails: [],
@@ -155,14 +238,14 @@ export async function registerRoutes(
       
       // Create extraction record
       const extraction = await storage.createExtraction({
-        userId: req.session.userId,
+        userId,
         url,
         status: result.emails.length > 0 ? "success" : "failed",
         emails: result.emails,
       });
       
       // Update user stats
-      await storage.updateUserStats(req.session.userId, result.emails.length);
+      await storage.updateUserStats(userId, result.emails.length);
       
       res.json({
         extraction,
@@ -174,12 +257,13 @@ export async function registerRoutes(
   });
   
   app.get("/api/extractions", async (req, res) => {
-    if (!req.session.userId) {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
     
     try {
-      const extractions = await storage.getExtractionsByUser(req.session.userId);
+      const extractions = await storage.getExtractionsByUser(userId);
       res.json(extractions);
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to fetch extractions" });
@@ -187,12 +271,13 @@ export async function registerRoutes(
   });
   
   app.get("/api/stats", async (req, res) => {
-    if (!req.session.userId) {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
     
     try {
-      const limits = await storage.getUserPlanLimits(req.session.userId);
+      const limits = await storage.getUserPlanLimits(userId);
       const planLimit = PLAN_LIMITS[limits.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
       
       res.json({
