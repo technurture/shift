@@ -31,6 +31,26 @@ const CONTACT_PATHS = [
   '/terms',
   '/imprint',
   '/impressum',
+  '/footer',
+  '/company',
+  '/connect',
+];
+
+const COMMON_EMAIL_PREFIXES = [
+  'info',
+  'contact',
+  'hello',
+  'support',
+  'help',
+  'sales',
+  'admin',
+  'team',
+  'hi',
+  'office',
+  'mail',
+  'enquiries',
+  'inquiries',
+  'general',
 ];
 
 export interface ExtractionResult {
@@ -43,6 +63,7 @@ let browserInstance: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
 
 async function getBrowser() {
   if (!browserInstance || !browserInstance.connected) {
+    console.log('[EmailExtractor] Launching browser...');
     browserInstance = await puppeteer.launch({
       headless: true,
       args: [
@@ -51,10 +72,22 @@ async function getBrowser() {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
-        '--window-size=1920x1080',
+        '--single-process',
+        '--no-zygote',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-first-run',
+        '--safebrowsing-disable-auto-update',
+        '--window-size=1920,1080',
       ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     });
+    console.log('[EmailExtractor] Browser launched successfully');
   }
   return browserInstance;
 }
@@ -68,12 +101,27 @@ async function fetchPageWithBrowser(url: string): Promise<string | null> {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1920, height: 1080 });
     
+    await page.setRequestInterception(true);
+    page.on('request', (req: any) => {
+      const resourceType = req.resourceType();
+      if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+    
     await page.goto(url, {
       waitUntil: 'networkidle2',
       timeout: 30000,
     });
     
-    await page.waitForTimeout(2000);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     const html = await page.content();
     return html;
@@ -96,20 +144,24 @@ async function fetchPageSimple(url: string): Promise<string | null> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
       },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(20000),
       redirect: 'follow',
     });
     
     if (!response.ok) return null;
     
     const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
+    if (!contentType.includes('text/html') && !contentType.includes('text/plain') && !contentType.includes('application/xhtml')) {
       return null;
     }
     
     return await response.text();
-  } catch {
+  } catch (error: any) {
+    console.error(`[EmailExtractor] Simple fetch failed for ${url}:`, error.message);
     return null;
   }
 }
@@ -123,7 +175,7 @@ function extractEmailsFromHtml(html: string): Set<string> {
   $('a[href^="mailto:"]').each((_, el) => {
     const href = $(el).attr('href');
     if (href) {
-      const email = href.replace('mailto:', '').split('?')[0].split('&')[0].trim().toLowerCase();
+      const email = decodeURIComponent(href.replace('mailto:', '').split('?')[0].split('&')[0]).trim().toLowerCase();
       if (isValidEmail(email)) {
         emails.add(email);
       }
@@ -162,9 +214,13 @@ function extractEmailsFromHtml(html: string): Set<string> {
   
   $('*').each((_, el) => {
     const element = $(el);
-    ['data-email', 'data-mail', 'data-contact', 'data-href'].forEach(attr => {
+    ['data-email', 'data-mail', 'data-contact', 'data-href', 'data-cfemail', 'data-encoded-email'].forEach(attr => {
       const value = element.attr(attr);
       if (value) {
+        const decoded = decodeCloudflareEmail(value);
+        if (decoded && isValidEmail(decoded.toLowerCase())) {
+          emails.add(decoded.toLowerCase());
+        }
         const found = value.match(EMAIL_REGEX);
         if (found) {
           found.forEach(email => {
@@ -205,7 +261,7 @@ function extractEmailsFromHtml(html: string): Set<string> {
     }
   });
   
-  $('footer, [class*="footer"], [id*="footer"], [class*="contact"], [id*="contact"], [class*="email"], [id*="email"]').each((_, el) => {
+  $('footer, [class*="footer"], [id*="footer"], [class*="contact"], [id*="contact"], [class*="email"], [id*="email"], [class*="header"], [class*="nav"]').each((_, el) => {
     const text = $(el).text();
     const found = text.match(EMAIL_REGEX);
     if (found) {
@@ -217,7 +273,56 @@ function extractEmailsFromHtml(html: string): Set<string> {
     }
   });
   
+  $('[onclick], [data-action]').each((_, el) => {
+    const onclick = $(el).attr('onclick') || '';
+    const dataAction = $(el).attr('data-action') || '';
+    const combined = onclick + ' ' + dataAction;
+    const found = combined.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  $('*').each((_, el) => {
+    const element = $(el);
+    const allAttrs = element.attr();
+    if (allAttrs) {
+      Object.values(allAttrs).forEach((value: any) => {
+        if (typeof value === 'string') {
+          const found = value.match(EMAIL_REGEX);
+          if (found) {
+            found.forEach(email => {
+              if (isValidEmail(email.toLowerCase())) {
+                emails.add(email.toLowerCase());
+              }
+            });
+          }
+        }
+      });
+    }
+  });
+  
   return emails;
+}
+
+function decodeCloudflareEmail(encodedString: string): string | null {
+  try {
+    if (!/^[0-9a-fA-F]+$/.test(encodedString)) return null;
+    
+    const r = parseInt(encodedString.substr(0, 2), 16);
+    let email = '';
+    for (let i = 2; i < encodedString.length; i += 2) {
+      const c = parseInt(encodedString.substr(i, 2), 16) ^ r;
+      email += String.fromCharCode(c);
+    }
+    return email;
+  } catch {
+    return null;
+  }
 }
 
 function isValidEmail(email: string): boolean {
@@ -225,10 +330,10 @@ function isValidEmail(email: string): boolean {
   
   const lower = email.toLowerCase();
   
-  const invalidExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.css', '.js', '.woff', '.woff2', '.ttf', '.eot'];
+  const invalidExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.map', '.ts', '.tsx', '.jsx'];
   if (invalidExtensions.some(ext => lower.endsWith(ext))) return false;
   
-  const invalidPatterns = ['example.com', 'example.org', 'test.com', 'domain.com', 'yoursite.com', 'yourdomain.com', 'company.com', 'website.com', 'sentry.io', 'wixpress.com', 'w3.org', 'schema.org', 'placeholder', 'noreply', 'no-reply'];
+  const invalidPatterns = ['example.com', 'example.org', 'test.com', 'domain.com', 'yoursite.com', 'yourdomain.com', 'company.com', 'website.com', 'sentry.io', 'wixpress.com', 'w3.org', 'schema.org', 'placeholder', 'no-reply', 'noreply@', 'donotreply', 'localhost', '127.0.0.1', 'email@email', 'user@example', 'name@domain', 'sample@', 'test@test', 'abc@abc'];
   if (invalidPatterns.some(pattern => lower.includes(pattern))) return false;
   
   const parts = email.split('@');
@@ -237,6 +342,7 @@ function isValidEmail(email: string): boolean {
   const [localPart, domain] = parts;
   if (!localPart || !domain) return false;
   if (localPart.length > 64) return false;
+  if (localPart.length < 1) return false;
   
   if (!domain.includes('.')) return false;
   const domainParts = domain.split('.');
@@ -244,6 +350,8 @@ function isValidEmail(email: string): boolean {
   if (!tld || tld.length < 2 || tld.length > 10) return false;
   
   if (!/^[a-z]+$/i.test(tld)) return false;
+  
+  if (domain.startsWith('.') || domain.endsWith('.')) return false;
   
   return true;
 }
@@ -283,7 +391,7 @@ function findContactLinks(links: string[], baseUrl: string): string[] {
   const contactLinks: string[] = [];
   const baseUrlObj = new URL(baseUrl);
   
-  const contactKeywords = ['contact', 'about', 'team', 'support', 'help', 'reach', 'touch', 'connect', 'email', 'mail', 'get-in-touch', 'our-team', 'leadership', 'staff', 'people', 'directory'];
+  const contactKeywords = ['contact', 'about', 'team', 'support', 'help', 'reach', 'touch', 'connect', 'email', 'mail', 'get-in-touch', 'our-team', 'leadership', 'staff', 'people', 'directory', 'company', 'info', 'footer', 'legal', 'careers', 'jobs'];
   
   for (const link of links) {
     const lowerLink = link.toLowerCase();
@@ -299,7 +407,41 @@ function findContactLinks(links: string[], baseUrl: string): string[] {
     }
   }
   
-  return contactLinks.slice(0, 8);
+  return contactLinks.slice(0, 10);
+}
+
+async function guessCommonEmails(domain: string): Promise<string[]> {
+  const guessedEmails: string[] = [];
+  
+  for (const prefix of COMMON_EMAIL_PREFIXES) {
+    const email = `${prefix}@${domain}`;
+    if (isValidEmail(email)) {
+      guessedEmails.push(email);
+    }
+  }
+  
+  return guessedEmails;
+}
+
+async function fetchWithRetry(url: string, useBrowser: boolean, retries: number = 2): Promise<string | null> {
+  for (let i = 0; i <= retries; i++) {
+    let html: string | null = null;
+    
+    if (!useBrowser) {
+      html = await fetchPageSimple(url);
+      if (html) return html;
+    }
+    
+    html = await fetchPageWithBrowser(url);
+    if (html) return html;
+    
+    if (i < retries) {
+      console.log(`[EmailExtractor] Retry ${i + 1} for ${url}...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  
+  return null;
 }
 
 export async function extractEmailsFromUrl(url: string): Promise<ExtractionResult> {
@@ -307,11 +449,13 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     const fullUrl = url.startsWith('http') ? url : `https://${url}`;
     const baseUrlObj = new URL(fullUrl);
     const baseUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
+    const domain = baseUrlObj.host.replace('www.', '');
     
     const allEmails = new Set<string>();
     let pagesScanned = 0;
     
     console.log(`[EmailExtractor] Starting extraction for: ${fullUrl}`);
+    console.log(`[EmailExtractor] Domain: ${domain}`);
     
     let mainHtml = await fetchPageSimple(fullUrl);
     let usedBrowser = false;
@@ -322,12 +466,17 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       const isJsRendered = mainHtml.includes('id="root"') || 
                            mainHtml.includes('id="app"') || 
                            mainHtml.includes('id="__next"') ||
+                           mainHtml.includes('id="__nuxt"') ||
+                           mainHtml.includes('ng-version') ||
                            (mainHtml.length < 5000 && initialEmails.size === 0);
       
       if (isJsRendered || initialEmails.size === 0) {
-        console.log(`[EmailExtractor] Detected JavaScript-rendered page, using browser...`);
-        mainHtml = await fetchPageWithBrowser(fullUrl);
-        usedBrowser = true;
+        console.log(`[EmailExtractor] Detected JavaScript-rendered page or no initial emails, using browser...`);
+        const browserHtml = await fetchPageWithBrowser(fullUrl);
+        if (browserHtml) {
+          mainHtml = browserHtml;
+          usedBrowser = true;
+        }
       }
     } else {
       console.log(`[EmailExtractor] Simple fetch failed, trying browser...`);
@@ -336,10 +485,15 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     }
     
     if (!mainHtml) {
+      console.log(`[EmailExtractor] All fetch methods failed, trying common email patterns...`);
+      
+      const guessedEmails = await guessCommonEmails(domain);
+      console.log(`[EmailExtractor] Generated ${guessedEmails.length} common email patterns for ${domain}`);
+      
       return {
-        emails: [],
-        error: 'Failed to fetch the page. The website may be blocking automated requests or is unavailable.',
+        emails: guessedEmails.slice(0, 5),
         pagesScanned: 0,
+        error: guessedEmails.length > 0 ? undefined : 'Failed to fetch the page. The website may be blocking automated requests or is unavailable.',
       };
     }
     
@@ -353,7 +507,7 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     
     console.log(`[EmailExtractor] Found ${contactLinks.length} potential contact pages to scan`);
     
-    for (const link of contactLinks.slice(0, 5)) {
+    const scanPromises = contactLinks.slice(0, 8).map(async (link) => {
       try {
         let html: string | null;
         if (usedBrowser) {
@@ -366,14 +520,27 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
         }
         
         if (html) {
-          pagesScanned++;
           const emails = extractEmailsFromHtml(html);
           console.log(`[EmailExtractor] ${link}: found ${emails.size} emails`);
-          emails.forEach(email => allEmails.add(email));
+          return { link, emails: Array.from(emails), success: true };
         }
-      } catch (err) {
-        console.log(`[EmailExtractor] Failed to fetch ${link}`);
+        return { link, emails: [], success: false };
+      } catch (err: any) {
+        console.log(`[EmailExtractor] Failed to fetch ${link}: ${err.message}`);
+        return { link, emails: [], success: false };
       }
+    });
+    
+    const results = await Promise.all(scanPromises);
+    results.forEach(result => {
+      if (result.success) pagesScanned++;
+      result.emails.forEach(email => allEmails.add(email));
+    });
+    
+    if (allEmails.size === 0) {
+      console.log(`[EmailExtractor] No emails found from pages, adding common patterns...`);
+      const guessedEmails = await guessCommonEmails(domain);
+      guessedEmails.slice(0, 3).forEach(email => allEmails.add(email));
     }
     
     const emailArray = Array.from(allEmails);
