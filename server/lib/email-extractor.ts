@@ -47,8 +47,13 @@ let browserInstance: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
 async function getBrowser() {
   if (!browserInstance || !browserInstance.connected) {
     console.log('[EmailExtractor] Launching browser...');
+    
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium';
+    console.log(`[EmailExtractor] Using Chrome at: ${executablePath}`);
+    
     browserInstance = await puppeteer.launch({
       headless: true,
+      executablePath,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
