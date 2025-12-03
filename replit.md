@@ -6,11 +6,17 @@ MailSift is a web and mobile application designed to extract email addresses fro
 
 ## Recent Changes (December 2025)
 
-- Added batch extraction support (up to 10 URLs at once)
-- Added search and filter functionality in extraction history
-- Improved mobile-responsive design throughout dashboard
-- Enhanced email extraction for country-code TLD domains (e.g., .com.ng, .co.uk)
-- Added CSV export functionality
+- Added batch extraction support (up to 10 URLs at once) with batch mode as default
+- Added real-time URL validation with visual indicators (valid/invalid badges)
+- Added URL preview section showing first 5 URLs with "and N more" for larger batches
+- Added date range filtering in extraction history
+- Added sorting options (date, emails count, ascending/descending)
+- Added bulk operations (select all, bulk delete, bulk export)
+- Added quick stats summary in extraction history
+- Enhanced navbar to show Home and Dashboard links for logged-in users
+- Improved session persistence allowing seamless navigation between pages
+- Enhanced mobile-responsive design with 44px minimum touch targets throughout
+- Added CSV export functionality with selection support
 - Added delete extraction feature
 
 ## Local Development Setup
