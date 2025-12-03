@@ -48,11 +48,13 @@ import {
   Info,
   Link2,
   BarChart3,
+  Crown,
 } from "lucide-react";
 import { api, type Extraction, type Stats } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { UpgradeDialog, LimitReachedBanner } from "@/components/upgrade-dialog";
 
 export default function Dashboard() {
   const [inputMode, setInputMode] = useState<"single" | "batch">("batch");
@@ -64,6 +66,7 @@ export default function Dashboard() {
   const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -327,13 +330,28 @@ export default function Dashboard() {
   };
 
   const planLimit = stats ? (stats.plan === "free" ? 500 : stats.plan === "basic" ? 1000 : Infinity) : 500;
+  const linksLimit = stats ? (stats.plan === "free" ? 500 : stats.plan === "basic" ? 1000 : Infinity) : 500;
   const isProcessing = extractMutation.isPending || batchExtractMutation.isPending;
+  const isLimitReached = stats && (
+    (planLimit !== Infinity && stats.emailsExtracted >= planLimit) ||
+    (linksLimit !== Infinity && stats.linksScanned >= linksLimit)
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Navbar />
       
       <main className="flex-1 container mx-auto px-4 pt-20 sm:pt-24 pb-8 sm:pb-12 max-w-full overflow-x-hidden">
+        {stats && (
+          <LimitReachedBanner
+            onUpgrade={() => setUpgradeDialogOpen(true)}
+            emailsUsed={stats.emailsExtracted}
+            emailsLimit={planLimit}
+            linksUsed={stats.linksScanned}
+            linksLimit={linksLimit}
+          />
+        )}
+        
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
           <Card className="lg:col-span-3 border-border/50 bg-card/50 backdrop-blur-sm">
             <CardHeader className="pb-3">
@@ -372,7 +390,7 @@ export default function Dashboard() {
                     type="submit" 
                     size="lg" 
                     className="min-h-[44px] sm:min-h-[48px] px-6 sm:px-8 bg-primary hover:bg-primary/90 text-white font-medium w-full sm:w-auto"
-                    disabled={isProcessing}
+                    disabled={isProcessing || isLimitReached}
                     data-testid="button-extract"
                   >
                     {extractMutation.isPending ? (
@@ -466,7 +484,7 @@ export default function Dashboard() {
                       type="submit" 
                       size="lg" 
                       className="min-h-[44px] sm:min-h-[48px] px-6 sm:px-8 bg-primary hover:bg-primary/90 text-white font-medium w-full sm:w-auto"
-                      disabled={isProcessing || parsedUrls.valid.length === 0}
+                      disabled={isProcessing || parsedUrls.valid.length === 0 || isLimitReached}
                       data-testid="button-batch-extract"
                     >
                       {batchExtractMutation.isPending ? (
@@ -507,7 +525,15 @@ export default function Dashboard() {
                     <Badge variant="outline" className="border-border/50 text-muted-foreground capitalize text-xs">
                       {stats?.plan || "Free"} Plan
                     </Badge>
-                    <Button variant="link" className="text-primary p-0 h-auto text-xs min-h-[44px]" data-testid="button-upgrade">Upgrade</Button>
+                    <Button 
+                      variant="link" 
+                      className="text-primary p-0 h-auto text-xs min-h-[44px]" 
+                      onClick={() => setUpgradeDialogOpen(true)}
+                      data-testid="button-upgrade"
+                    >
+                      <Crown className="w-3 h-3 mr-1" />
+                      Upgrade
+                    </Button>
                   </div>
                 </>
               )}
@@ -813,6 +839,12 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </main>
+      
+      <UpgradeDialog
+        open={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        currentPlan={stats?.plan || "free"}
+      />
     </div>
   );
 }
