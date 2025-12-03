@@ -4,8 +4,13 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, Search, Zap, Shield, Globe, ArrowRight } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Check, Search, Zap, Shield, Globe, ArrowRight, Mail, Loader2, Send } from "lucide-react";
 import { motion } from "framer-motion";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { useMutation } from "@tanstack/react-query";
 import heroBg from "@assets/generated_images/abstract_data_flow_background_for_saas_hero_section.png";
 
 export default function Home() {
@@ -129,6 +134,7 @@ export default function Home() {
             <PricingCard 
               title="Starter" 
               price="$0" 
+              nairaPrice="Free"
               description="Perfect for testing the waters"
               features={["500 Links Scanned", "500 Emails Extracted", "Standard Speed", "CSV Export"]}
               cta="Start Free"
@@ -139,6 +145,7 @@ export default function Home() {
             <PricingCard 
               title="Basic" 
               price="$50" 
+              nairaPrice="75,000 NGN"
               period="/mo"
               description="For serious individual prospectors"
               features={["1,000 Links Scanned", "1,000 Emails Extracted", "High Speed Priority", "CSV & JSON Export", "Email Support"]}
@@ -151,6 +158,7 @@ export default function Home() {
             <PricingCard 
               title="Premium" 
               price="$150" 
+              nairaPrice="225,000 NGN"
               period="/mo"
               description="Powerhouse for sales teams"
               features={["Unlimited Links", "Unlimited Emails", "Maximum Speed", "API Access", "Dedicated Support"]}
@@ -160,6 +168,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Contact Section */}
+      <ContactSection />
 
       <Footer />
     </div>
@@ -178,9 +189,9 @@ function FeatureCard({ icon, title, description }: { icon: React.ReactNode, titl
   );
 }
 
-function PricingCard({ title, price, period = "", description, features, cta, popular, variant }: any) {
+function PricingCard({ title, price, nairaPrice, period = "", description, features, cta, popular, variant }: any) {
   return (
-    <div className={`relative p-8 rounded-3xl border flex flex-col ${popular ? 'bg-white/5 border-primary shadow-[0_0_40px_-10px_rgba(124,58,237,0.3)]' : 'bg-background border-white/10'}`}>
+    <div className={`relative p-8 rounded-3xl border flex flex-col ${popular ? 'bg-white/5 border-primary shadow-[0_0_40px_-10px_rgba(124,58,237,0.3)]' : 'bg-background border-white/10'}`} data-testid={`card-pricing-${title.toLowerCase()}`}>
       {popular && (
         <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-primary to-purple-500 text-white px-4 py-1 rounded-full text-sm font-bold shadow-lg">
           Most Popular
@@ -188,9 +199,10 @@ function PricingCard({ title, price, period = "", description, features, cta, po
       )}
       <div className="mb-8">
         <h3 className="text-lg font-medium text-muted-foreground mb-2">{title}</h3>
-        <div className="flex items-baseline gap-1">
-          <span className="text-4xl font-bold text-white">{price}</span>
-          <span className="text-muted-foreground">{period}</span>
+        <div className="flex flex-col">
+          <span className="text-4xl font-bold text-white" data-testid={`text-price-usd-${title.toLowerCase()}`}>{price}</span>
+          <span className="text-lg font-semibold text-primary/80" data-testid={`text-price-ngn-${title.toLowerCase()}`}>{nairaPrice}</span>
+          {period && <span className="text-muted-foreground text-sm">{period}</span>}
         </div>
         <p className="text-sm text-muted-foreground mt-2">{description}</p>
       </div>
@@ -207,10 +219,137 @@ function PricingCard({ title, price, period = "", description, features, cta, po
       <Link href="/auth?mode=signup">
         <Button 
           className={`w-full h-12 font-bold ${popular ? 'bg-primary hover:bg-primary/90 text-white' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+          data-testid={`button-cta-${title.toLowerCase()}`}
         >
           {cta}
         </Button>
       </Link>
     </div>
+  );
+}
+
+function ContactSection() {
+  const [formData, setFormData] = useState({ name: "", email: "", message: "" });
+  const { toast } = useToast();
+
+  const contactMutation = useMutation({
+    mutationFn: (data: { name: string; email: string; message: string }) => 
+      api.sendContactMessage(data),
+    onSuccess: () => {
+      toast({
+        title: "Message sent!",
+        description: "We'll get back to you as soon as possible.",
+      });
+      setFormData({ name: "", email: "", message: "" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to send message",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.email || !formData.message) {
+      toast({
+        title: "Missing fields",
+        description: "Please fill in all fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    contactMutation.mutate(formData);
+  };
+
+  return (
+    <section id="contact" className="py-24 px-4 bg-black/20 border-y border-white/5">
+      <div className="container mx-auto max-w-4xl">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl md:text-4xl font-heading font-bold text-white mb-4">Get in Touch</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Have questions? We'd love to hear from you.
+          </p>
+        </div>
+
+        <Card className="border-border/50 bg-card/50 backdrop-blur-sm max-w-2xl mx-auto">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-primary" />
+              Contact Us
+            </CardTitle>
+            <CardDescription>
+              Send us a message and we'll respond within 24 hours.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label htmlFor="name" className="text-sm font-medium">
+                    Name
+                  </label>
+                  <Input
+                    id="name"
+                    placeholder="Your name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="bg-background/50 border-border/50"
+                    data-testid="input-contact-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="email" className="text-sm font-medium">
+                    Email
+                  </label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="your@email.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="bg-background/50 border-border/50"
+                    data-testid="input-contact-email"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="message" className="text-sm font-medium">
+                  Message
+                </label>
+                <Textarea
+                  id="message"
+                  placeholder="How can we help you?"
+                  value={formData.message}
+                  onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                  className="bg-background/50 border-border/50 min-h-[120px] resize-y"
+                  data-testid="input-contact-message"
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full h-12 font-bold bg-primary hover:bg-primary/90 text-white"
+                disabled={contactMutation.isPending}
+                data-testid="button-contact-submit"
+              >
+                {contactMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    Send Message
+                  </>
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
   );
 }

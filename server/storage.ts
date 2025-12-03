@@ -6,7 +6,13 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(userId: string, updates: Partial<User>): Promise<User | undefined>;
   updateUserStats(userId: string, emailsCount: number): Promise<void>;
+  updateVerificationCode(userId: string, code: string, expiry: Date): Promise<void>;
+  verifyEmail(userId: string): Promise<void>;
+  updateResetCode(userId: string, code: string, expiry: Date): Promise<void>;
+  clearResetCode(userId: string): Promise<void>;
+  updateUserPlan(userId: string, plan: string): Promise<void>;
   
   createExtraction(extraction: InsertExtraction): Promise<Extraction>;
   getExtractionsByUser(userId: string): Promise<Extraction[]>;
@@ -44,12 +50,30 @@ export class MongoStorage implements IStorage {
       plan: "free",
       emailsExtracted: 0,
       linksScanned: 0,
+      isEmailVerified: false,
       createdAt: now,
     };
     
     await users.insertOne(userDoc);
     
     const { _id, ...rest } = userDoc;
+    return { id: _id, ...rest } as User;
+  }
+
+  async updateUser(userId: string, updates: Partial<User>): Promise<User | undefined> {
+    const { users } = await connectToDatabase();
+    
+    const { id, ...updateFields } = updates;
+    
+    const result = await users.findOneAndUpdate(
+      { _id: userId },
+      { $set: updateFields },
+      { returnDocument: "after" }
+    );
+    
+    if (!result) return undefined;
+    
+    const { _id, ...rest } = result;
     return { id: _id, ...rest } as User;
   }
 
@@ -63,6 +87,67 @@ export class MongoStorage implements IStorage {
           linksScanned: 1 
         } 
       }
+    );
+  }
+
+  async updateVerificationCode(userId: string, code: string, expiry: Date): Promise<void> {
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { 
+        $set: { 
+          verificationCode: code,
+          verificationCodeExpiry: expiry
+        } 
+      }
+    );
+  }
+
+  async verifyEmail(userId: string): Promise<void> {
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { 
+        $set: { isEmailVerified: true },
+        $unset: { 
+          verificationCode: "",
+          verificationCodeExpiry: ""
+        } 
+      }
+    );
+  }
+
+  async updateResetCode(userId: string, code: string, expiry: Date): Promise<void> {
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { 
+        $set: { 
+          resetCode: code,
+          resetCodeExpiry: expiry
+        } 
+      }
+    );
+  }
+
+  async clearResetCode(userId: string): Promise<void> {
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { 
+        $unset: { 
+          resetCode: "",
+          resetCodeExpiry: ""
+        } 
+      }
+    );
+  }
+
+  async updateUserPlan(userId: string, plan: string): Promise<void> {
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { $set: { plan } }
     );
   }
 

@@ -9,6 +9,7 @@ export interface User {
   emailsExtracted: number;
   linksScanned: number;
   createdAt: string;
+  isEmailVerified: boolean;
 }
 
 export interface Extraction {
@@ -75,6 +76,59 @@ class ApiClient {
 
   async getCurrentUser() {
     return this.request<User>("/auth/me");
+  }
+
+  async verifyEmail(data: { email: string; code: string }) {
+    return this.request<User>("/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async resendVerificationCode(email: string) {
+    return this.request<{ message: string }>("/auth/resend-code", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async forgotPassword(email: string) {
+    return this.request<{ message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(data: { email: string; code: string; newPassword: string }) {
+    return this.request<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateProfile(data: { firstName?: string; lastName?: string }) {
+    return this.request<User>("/user/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendContactMessage(data: { name: string; email: string; message: string }) {
+    return this.request<{ message: string }>("/contact", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async initializePayment(plan: string) {
+    return this.request<{ authorization_url: string; reference: string }>("/payment/initialize", {
+      method: "POST",
+      body: JSON.stringify({ plan }),
+    });
+  }
+
+  async verifyPayment(reference: string) {
+    return this.request<{ success: boolean; plan: string }>(`/payment/verify/${reference}`);
   }
 
   // Extractions

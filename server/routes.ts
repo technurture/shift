@@ -5,6 +5,22 @@ import { insertUserSchema } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { extractEmailsFromUrl } from "./lib/email-extractor";
 import { signToken, verifyToken } from "./lib/jwt";
+import {
+  sendVerificationEmail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendPlanUpgradeEmail,
+  sendContactEmail,
+} from "./lib/email";
+
+function generateVerificationCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+const PLAN_PRICES: Record<string, number> = {
+  basic: 5000000,
+  premium: 15000000,
+};
 
 async function getUserIdFromRequest(req: Request): Promise<string | null> {
   if (req.session?.userId) {
@@ -57,12 +73,20 @@ export async function registerRoutes(
         lastName,
       });
       
+      // Generate verification code and set expiry (15 minutes)
+      const verificationCode = generateVerificationCode();
+      const verificationCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
+      await storage.updateVerificationCode(user.id, verificationCode, verificationCodeExpiry);
+      
+      // Send verification email
+      await sendVerificationEmail(email, verificationCode, firstName);
+      
       // Set session for web
       req.session.userId = user.id;
       
       // Don't send password back
       const { password: _, ...userWithoutPassword } = user;
-      res.json(userWithoutPassword);
+      res.json({ ...userWithoutPassword, isEmailVerified: false });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Failed to create account" });
     }
@@ -120,12 +144,20 @@ export async function registerRoutes(
         lastName,
       });
       
+      // Generate verification code and set expiry (15 minutes)
+      const verificationCode = generateVerificationCode();
+      const verificationCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
+      await storage.updateVerificationCode(user.id, verificationCode, verificationCodeExpiry);
+      
+      // Send verification email
+      await sendVerificationEmail(email, verificationCode, firstName);
+      
       // Generate JWT token for mobile
       const token = signToken(user.id);
       
       // Don't send password back
       const { password: _, ...userWithoutPassword } = user;
-      res.json({ ...userWithoutPassword, token });
+      res.json({ ...userWithoutPassword, isEmailVerified: false, token });
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Failed to create account" });
     }
@@ -392,6 +424,302 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to delete extraction" });
+    }
+  });
+
+  // Email Verification Routes
+  app.post("/api/auth/verify-email", async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      
+      if (!email || !code) {
+        return res.status(400).json({ error: "Email and code are required" });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      if (user.isEmailVerified) {
+        return res.status(400).json({ error: "Email is already verified" });
+      }
+      
+      if (!user.verificationCode || !user.verificationCodeExpiry) {
+        return res.status(400).json({ error: "No verification code found. Please request a new one." });
+      }
+      
+      if (user.verificationCode !== code) {
+        return res.status(400).json({ error: "Invalid verification code" });
+      }
+      
+      if (new Date() > new Date(user.verificationCodeExpiry)) {
+        return res.status(400).json({ error: "Verification code has expired. Please request a new one." });
+      }
+      
+      await storage.verifyEmail(user.id);
+      await sendWelcomeEmail(email, user.firstName, user.plan);
+      
+      res.json({ success: true, message: "Email verified successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Verification failed" });
+    }
+  });
+
+  app.post("/api/auth/resend-code", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      if (user.isEmailVerified) {
+        return res.status(400).json({ error: "Email is already verified" });
+      }
+      
+      const verificationCode = generateVerificationCode();
+      const verificationCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
+      await storage.updateVerificationCode(user.id, verificationCode, verificationCodeExpiry);
+      
+      await sendVerificationEmail(email, verificationCode, user.firstName);
+      
+      res.json({ success: true, message: "Verification code sent" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to resend code" });
+    }
+  });
+
+  // Password Reset Routes
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.json({ success: true, message: "If an account exists, a reset code has been sent" });
+      }
+      
+      const resetCode = generateVerificationCode();
+      const resetCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
+      await storage.updateResetCode(user.id, resetCode, resetCodeExpiry);
+      
+      await sendPasswordResetEmail(email, resetCode, user.firstName);
+      
+      res.json({ success: true, message: "If an account exists, a reset code has been sent" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to process request" });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ error: "Email, code, and new password are required" });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      if (!user.resetCode || !user.resetCodeExpiry) {
+        return res.status(400).json({ error: "No reset code found. Please request a new one." });
+      }
+      
+      if (user.resetCode !== code) {
+        return res.status(400).json({ error: "Invalid reset code" });
+      }
+      
+      if (new Date() > new Date(user.resetCodeExpiry)) {
+        return res.status(400).json({ error: "Reset code has expired. Please request a new one." });
+      }
+      
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(user.id, { password: hashedPassword });
+      await storage.clearResetCode(user.id);
+      
+      res.json({ success: true, message: "Password reset successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to reset password" });
+    }
+  });
+
+  // Profile Update Route
+  app.patch("/api/user/profile", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+      const { firstName, lastName } = req.body;
+      
+      const updates: Partial<{ firstName: string; lastName: string }> = {};
+      if (firstName !== undefined) updates.firstName = firstName;
+      if (lastName !== undefined) updates.lastName = lastName;
+      
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No fields to update" });
+      }
+      
+      const updatedUser = await storage.updateUser(userId, updates);
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update profile" });
+    }
+  });
+
+  // Contact Form Route
+  app.post("/api/contact", async (req, res) => {
+    try {
+      const { name, email, message } = req.body;
+      
+      if (!name || !email || !message) {
+        return res.status(400).json({ error: "Name, email, and message are required" });
+      }
+      
+      const result = await sendContactEmail(name, email, message);
+      
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to send message" });
+      }
+      
+      res.json({ success: true, message: "Message sent successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to send message" });
+    }
+  });
+
+  // Paystack Payment Routes
+  app.post("/api/payment/initialize", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+      const { plan } = req.body;
+      
+      if (!plan || !PLAN_PRICES[plan]) {
+        return res.status(400).json({ error: "Invalid plan selected" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
+      if (!paystackSecretKey) {
+        return res.status(500).json({ error: "Payment service not configured" });
+      }
+      
+      const response = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${paystackSecretKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: user.email,
+          amount: PLAN_PRICES[plan],
+          metadata: {
+            userId: user.id,
+            plan: plan,
+          },
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!data.status) {
+        return res.status(400).json({ error: data.message || "Failed to initialize payment" });
+      }
+      
+      res.json({
+        success: true,
+        authorization_url: data.data.authorization_url,
+        reference: data.data.reference,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to initialize payment" });
+    }
+  });
+
+  app.get("/api/payment/verify/:reference", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+      const { reference } = req.params;
+      
+      if (!reference) {
+        return res.status(400).json({ error: "Reference is required" });
+      }
+      
+      const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
+      if (!paystackSecretKey) {
+        return res.status(500).json({ error: "Payment service not configured" });
+      }
+      
+      const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${paystackSecretKey}`,
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (!data.status) {
+        return res.status(400).json({ error: data.message || "Failed to verify payment" });
+      }
+      
+      if (data.data.status !== "success") {
+        return res.status(400).json({ error: "Payment was not successful" });
+      }
+      
+      const metadata = data.data.metadata;
+      const plan = metadata?.plan;
+      
+      if (!plan) {
+        return res.status(400).json({ error: "Invalid payment metadata" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      await storage.updateUserPlan(userId, plan);
+      await sendPlanUpgradeEmail(user.email, user.firstName, plan);
+      
+      res.json({
+        success: true,
+        message: "Payment verified successfully",
+        plan: plan,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to verify payment" });
     }
   });
 
