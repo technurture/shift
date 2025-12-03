@@ -1,0 +1,30 @@
+Here are few things to follow:
+
+    can you help change my database to mongo db, change all the postgress there to mongo db, change all the pg schema to mongodb schema, all the connection from pg to mongodb, i've added the mongo db database url to the secrete
+    help add a authentication to the application for both the web and the mobile, the jwt token, help add it to the secret as well
+    I want to create a web/mobile application that help user to extract email from a website or app, All what user need is to paste the website link in the web/mobile app and the web/mobile app will now scan the link of the website that the user paste for the website valid email and if the web/mobile scan and do not see any email to extract its immediately tell the user that their is know email , remember that this web/mobile we are building will be a SAAS.
+    Follow this on how the interface will look like.
+    Once the user land on the web, user can paste link directly and once they click on a button to extract the email, its will ask them to sign in if they have an account and if not sign up, that is for user that is not already login, but for the user that is login can have direct access to it.
+    There should be a free packgae where user can extract up to paste 500 links and extract up to 500 emails as well, after that they will have to upgrade their account to either Basic, Premium or Custom, Basic is 1000 links and 1000 emails, and the amount is 50 dollars and so on like that
+    Make sure the app is user friendly both the mobile and the web app
+    Choose a brand for the app, with a good logo and colour code
+    Choose a good and uncommon domain name for the app
+    Make sure the app is seemless and catching for users
+    Act as a senior fullstack developer, Senior Product design and senior Project management in making sure the app is well structured in termsd of the code base for both the web/mobile use, the project is well design and the Project is well managed and the marketing strategy is very strong and well organized
+    hope you are still following this to design the application
+    help seed 1 user can be using for testing
+Here are few things to follow:
+
+    can you help change my database to mongo db, change all the postgress there to mongo db, change all the pg schema to mongodb schema, all the connection from pg to mongodb, i've added the mongo db database url to the secrete
+    help add a authentication to the application for both the web and the mobile, the jwt token, help add it to the secret as well
+    I want to create a web/mobile application that help user to extract email from a website or app, All what user need is to paste the website link in the web/mobile app and the web/mobile app will now scan the link of the website that the user paste for the website valid email and if the web/mobile scan and do not see any email to extract its immediately tell the user that their is know email , remember that this web/mobile we are building will be a SAAS.
+    Follow this on how the interface will look like.
+    Once the user land on the web, user can paste link directly and once they click on a button to extract the email, its will ask them to sign in if they have an account and if not sign up, that is for user that is not already login, but for the user that is login can have direct access to it.
+    There should be a free packgae where user can extract up to paste 500 links and extract up to 500 emails as well, after that they will have to upgrade their account to either Basic, Premium or Custom, Basic is 1000 links and 1000 emails, and the amount is 50 dollars and so on like that
+    Make sure the app is user friendly both the mobile and the web app
+    Choose a brand for the app, with a good logo and colour code
+    Choose a good and uncommon domain name for the app
+    Make sure the app is seemless and catching for users
+    Act as a senior fullstack developer, Senior Product design and senior Project management in making sure the app is well structured in termsd of the code base for both the web/mobile use, the project is well design and the Project is well managed and the marketing strategy is very strong and well organized
+    hope you are still following this to design the application
+    help seed 1 user can be using for testing
