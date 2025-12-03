@@ -58,6 +58,8 @@ const PRIORITY_CONTACT_PATHS = [
   '/seller-center',
   '/vendor',
   '/partners',
+  '/sp-contact',
+  '/sp-about_us',
 ];
 
 const COMMON_EMAIL_PREFIXES = [
@@ -236,74 +238,159 @@ async function fetchPageSimple(url: string): Promise<string | null> {
   }
 }
 
-async function searchForEmails(domain: string): Promise<Set<string>> {
-  const emails = new Set<string>();
-  const baseDomain = domain.replace('www.', '').split('.').slice(-2).join('.');
+// Get the brand/company name from a domain
+function getBrandName(domain: string): string {
+  const cleanDomain = domain.replace('www.', '');
+  const parts = cleanDomain.split('.');
+  return parts[0];
+}
+
+// Check if domain has a country-code TLD (like .ng, .uk, .de)
+function hasCountryCodeTLD(domain: string): boolean {
+  const cleanDomain = domain.replace('www.', '');
+  const parts = cleanDomain.split('.');
+  // Patterns like .com.ng, .co.uk, .com.au
+  if (parts.length >= 3) {
+    const lastTwo = parts.slice(-2).join('.');
+    const ccTLDs = ['com.ng', 'co.ng', 'com.uk', 'co.uk', 'com.au', 'co.au', 'com.br', 'com.mx', 'co.in', 'com.gh', 'co.ke', 'com.eg', 'co.za', 'com.pk', 'com.bd'];
+    if (ccTLDs.includes(lastTwo)) return true;
+  }
+  // Two-letter country codes
+  const tld = parts[parts.length - 1];
+  return tld.length === 2 && parts.length >= 2;
+}
+
+// Get base domain without country code
+function getBaseDomainWithoutCountryCode(domain: string): string {
+  const cleanDomain = domain.replace('www.', '');
+  const parts = cleanDomain.split('.');
   
-  try {
-    console.log(`[EmailExtractor] Searching for emails related to ${domain}...`);
-    
-    const searchUrls = [
-      `https://html.duckduckgo.com/html/?q=site%3A${baseDomain}+email+contact`,
-      `https://html.duckduckgo.com/html/?q=%22${baseDomain}%22+email+contact+support`,
-      `https://html.duckduckgo.com/html/?q=%22%40${baseDomain}%22`,
-    ];
-    
-    for (const searchUrl of searchUrls) {
-      try {
-        const response = await fetch(searchUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-          },
-          signal: AbortSignal.timeout(15000),
-        });
-        
-        if (response.ok) {
-          const html = await response.text();
-          const foundEmails = html.match(EMAIL_REGEX) || [];
-          foundEmails.forEach((email: string) => {
-            const cleaned = email.toLowerCase().trim();
-            if (isValidEmail(cleaned) && cleaned.includes(baseDomain)) {
-              emails.add(cleaned);
-            }
-          });
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (err: any) {
-        console.log(`[EmailExtractor] Search query failed: ${err.message}`);
-      }
+  if (parts.length >= 3) {
+    const lastTwo = parts.slice(-2).join('.');
+    const ccTLDs = ['com.ng', 'co.ng', 'com.uk', 'co.uk', 'com.au', 'co.au', 'com.br', 'com.mx', 'co.in', 'com.gh', 'co.ke', 'com.eg', 'co.za', 'com.pk', 'com.bd'];
+    if (ccTLDs.includes(lastTwo)) {
+      return parts.slice(0, -2).join('.') + '.com';
     }
-    
-    console.log(`[EmailExtractor] Web search found ${emails.size} emails`);
-  } catch (error: any) {
-    console.log(`[EmailExtractor] Web search failed: ${error.message}`);
   }
   
+  if (parts.length >= 2 && parts[parts.length - 1].length === 2) {
+    return parts.slice(0, -1).join('.') + '.com';
+  }
+  
+  return cleanDomain;
+}
+
+async function searchForEmails(domain: string): Promise<Set<string>> {
+  const emails = new Set<string>();
+  const brandName = getBrandName(domain);
+  const cleanDomain = domain.replace('www.', '');
+  
+  // Get all possible email domains to search for
+  const searchDomains = [cleanDomain];
+  if (hasCountryCodeTLD(domain)) {
+    searchDomains.push(getBaseDomainWithoutCountryCode(domain));
+  }
+  searchDomains.push(`${brandName}.com`);
+  
+  console.log(`[EmailExtractor] Searching for emails related to: ${searchDomains.join(', ')}`);
+  
+  const searchQueries = [
+    // Search for brand emails
+    `"@${brandName}" contact email`,
+    `${brandName} official email address`,
+    `${brandName} customer service email`,
+    `${brandName} support email contact`,
+    `"contact@${brandName}" OR "info@${brandName}" OR "support@${brandName}"`,
+    // Site-specific searches
+    `site:${cleanDomain} email contact`,
+  ];
+  
+  // Add domain-specific searches
+  for (const searchDomain of searchDomains) {
+    searchQueries.push(`"@${searchDomain}"`);
+  }
+  
+  for (const query of searchQueries.slice(0, 6)) {
+    try {
+      const encodedQuery = encodeURIComponent(query);
+      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
+      
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      
+      if (response.ok) {
+        const html = await response.text();
+        const foundEmails = html.match(EMAIL_REGEX) || [];
+        foundEmails.forEach((email: string) => {
+          const cleaned = email.toLowerCase().trim();
+          // Accept emails from any of the search domains
+          const isRelevant = searchDomains.some(d => cleaned.includes(d.split('.')[0]));
+          if (isValidEmail(cleaned) && isRelevant) {
+            emails.add(cleaned);
+          }
+        });
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 800));
+    } catch (err: any) {
+      console.log(`[EmailExtractor] Search query failed: ${err.message}`);
+    }
+  }
+  
+  console.log(`[EmailExtractor] Web search found ${emails.size} emails`);
   return emails;
 }
 
 function getRelatedDomains(domain: string): string[] {
-  const baseDomain = domain.replace('www.', '');
-  const parts = baseDomain.split('.');
-  const mainName = parts[0];
-  const tld = parts.slice(1).join('.');
+  const cleanDomain = domain.replace('www.', '');
+  const brandName = getBrandName(domain);
+  const parts = cleanDomain.split('.');
   
   const relatedDomains: string[] = [];
+  const prefixes = ['group', 'corporate', 'corp', 'about', 'contact', 'info', 'support', 'help', 'company', 'press', 'media', 'investor', 'investors', 'ir', 'careers', 'jobs', 'seller', 'vendor', 'partner'];
   
-  const prefixes = ['group', 'corporate', 'corp', 'about', 'contact', 'info', 'support', 'help', 'company', 'press', 'media', 'investor', 'investors', 'ir'];
-  
-  for (const prefix of prefixes) {
-    relatedDomains.push(`${prefix}.${mainName}.${tld}`);
+  // For country-code TLDs, create variations with .com
+  // e.g., for jumia.com.ng -> group.jumia.com (not group.jumia.com.ng)
+  if (hasCountryCodeTLD(domain)) {
+    // Add prefix subdomains with .com
+    for (const prefix of prefixes) {
+      relatedDomains.push(`${prefix}.${brandName}.com`);
+    }
+    
+    // Add the base .com domain
+    relatedDomains.push(`${brandName}.com`);
+    relatedDomains.push(`www.${brandName}.com`);
+    
+    // Add group/corporate variations
+    relatedDomains.push(`${brandName}group.com`);
+    relatedDomains.push(`${brandName}-group.com`);
+    relatedDomains.push(`${brandName}corporate.com`);
   }
   
-  relatedDomains.push(`${mainName}.com`);
-  relatedDomains.push(`${mainName}group.com`);
-  relatedDomains.push(`${mainName}-group.com`);
+  // Also add subdomains on the original domain
+  const tld = parts.slice(1).join('.');
+  for (const prefix of prefixes.slice(0, 8)) {
+    relatedDomains.push(`${prefix}.${brandName}.${tld}`);
+  }
   
-  return relatedDomains;
+  // Add base variations
+  relatedDomains.push(`${brandName}.com`);
+  relatedDomains.push(`${brandName}group.com`);
+  relatedDomains.push(`${brandName}-group.com`);
+  relatedDomains.push(`www.${brandName}.com`);
+  
+  // Remove duplicates and the original domain
+  const unique = Array.from(new Set(relatedDomains)).filter(d => d !== cleanDomain && d !== `www.${cleanDomain}`);
+  
+  console.log(`[EmailExtractor] Related domains to check: ${unique.slice(0, 10).join(', ')}`);
+  
+  return unique;
 }
 
 async function analyzeWithAI(textContent: string, domain: string): Promise<Set<string>> {
@@ -667,7 +754,7 @@ function findContactLinks(links: string[], baseUrl: string): string[] {
   const baseUrlObj = new URL(baseUrl);
   const addedPaths = new Set<string>();
   
-  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us'];
+  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us', 'sp-contact', 'sp-about'];
   const mediumPriorityKeywords = ['team', 'company', 'legal', 'privacy', 'terms', 'faq', 'info', 'careers'];
   const lowPriorityKeywords = ['press', 'media', 'partners', 'investors', 'newsroom'];
   
@@ -720,19 +807,71 @@ async function verifyEmailExists(email: string): Promise<boolean> {
   return true;
 }
 
+async function scanRelatedDomain(relatedDomain: string, allEmails: Set<string>): Promise<{ found: boolean; pagesScanned: number }> {
+  let pagesScanned = 0;
+  
+  try {
+    const relatedUrl = `https://${relatedDomain}/`;
+    console.log(`[EmailExtractor] Checking related domain: ${relatedDomain}`);
+    
+    let html = await fetchPageSimple(relatedUrl);
+    if (!html) {
+      html = await fetchPageWithBrowser(relatedUrl, 3000);
+    }
+    
+    if (html) {
+      const emails = extractEmailsFromHtml(html);
+      emails.forEach((e: string) => allEmails.add(e));
+      pagesScanned++;
+      
+      if (emails.size > 0) {
+        console.log(`[EmailExtractor] Found ${emails.size} emails on ${relatedDomain}`);
+        return { found: true, pagesScanned };
+      }
+      
+      // Try contact pages on related domain
+      const contactPaths = ['/contact', '/about', '/contact-us', '/about-us', '/company', '/team'];
+      for (const path of contactPaths) {
+        try {
+          let contactHtml = await fetchPageSimple(`https://${relatedDomain}${path}`);
+          if (!contactHtml) {
+            contactHtml = await fetchPageWithBrowser(`https://${relatedDomain}${path}`, 2000);
+          }
+          
+          if (contactHtml) {
+            const contactEmails = extractEmailsFromHtml(contactHtml);
+            contactEmails.forEach((e: string) => allEmails.add(e));
+            pagesScanned++;
+            
+            if (contactEmails.size > 0) {
+              console.log(`[EmailExtractor] Found ${contactEmails.size} emails on ${relatedDomain}${path}`);
+              return { found: true, pagesScanned };
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch (err: any) {
+    console.log(`[EmailExtractor] Related domain ${relatedDomain} failed: ${err.message}`);
+  }
+  
+  return { found: false, pagesScanned };
+}
+
 export async function extractEmailsFromUrl(url: string): Promise<ExtractionResult> {
   try {
     const fullUrl = url.startsWith('http') ? url : `https://${url}`;
     const baseUrlObj = new URL(fullUrl);
     const baseUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
     const domain = baseUrlObj.host.replace('www.', '');
+    const brandName = getBrandName(domain);
     
     const allEmails = new Set<string>();
     const methodsUsed: string[] = [];
     let pagesScanned = 0;
     
     console.log(`[EmailExtractor] Starting enhanced extraction for: ${fullUrl}`);
-    console.log(`[EmailExtractor] Domain: ${domain}`);
+    console.log(`[EmailExtractor] Domain: ${domain}, Brand: ${brandName}`);
     
     let mainHtml = await fetchPageSimple(fullUrl);
     let usedBrowser = false;
@@ -827,60 +966,26 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       result.emails.forEach(email => allEmails.add(email));
     });
     
+    // If no emails found, try related domains (improved logic for country-code TLDs)
     if (allEmails.size === 0) {
       console.log(`[EmailExtractor] No emails found, trying related domains...`);
       const relatedDomains = getRelatedDomains(domain);
       
-      for (const relatedDomain of relatedDomains.slice(0, 5)) {
-        try {
-          const relatedUrl = `https://${relatedDomain}/`;
-          console.log(`[EmailExtractor] Checking related domain: ${relatedDomain}`);
-          
-          let html = await fetchPageSimple(relatedUrl);
-          if (!html) {
-            html = await fetchPageWithBrowser(relatedUrl, 3000);
-          }
-          
-          if (html) {
-            const emails = extractEmailsFromHtml(html);
-            emails.forEach((e: string) => allEmails.add(e));
-            
-            if (emails.size > 0) {
-              console.log(`[EmailExtractor] Found ${emails.size} emails on ${relatedDomain}`);
-              pagesScanned++;
-              methodsUsed.push('related_domains');
-              break;
-            }
-            
-            const contactPaths = ['/contact', '/about', '/contact-us'];
-            for (const path of contactPaths) {
-              try {
-                const contactHtml = await fetchPageSimple(`https://${relatedDomain}${path}`);
-                if (contactHtml) {
-                  const contactEmails = extractEmailsFromHtml(contactHtml);
-                  contactEmails.forEach((e: string) => allEmails.add(e));
-                  if (contactEmails.size > 0) {
-                    console.log(`[EmailExtractor] Found ${contactEmails.size} emails on ${relatedDomain}${path}`);
-                    pagesScanned++;
-                    break;
-                  }
-                }
-              } catch {}
-            }
-            
-            if (allEmails.size > 0) {
-              methodsUsed.push('related_domains');
-              break;
-            }
-          }
-        } catch (err: any) {
-          console.log(`[EmailExtractor] Related domain ${relatedDomain} failed: ${err.message}`);
+      // Try up to 10 related domains
+      for (const relatedDomain of relatedDomains.slice(0, 10)) {
+        const result = await scanRelatedDomain(relatedDomain, allEmails);
+        pagesScanned += result.pagesScanned;
+        
+        if (result.found) {
+          methodsUsed.push('related_domains');
+          break;
         }
       }
     }
     
+    // If still no emails, try comprehensive web search
     if (allEmails.size === 0) {
-      console.log(`[EmailExtractor] Trying web search...`);
+      console.log(`[EmailExtractor] Trying comprehensive web search...`);
       const searchEmails = await searchForEmails(domain);
       searchEmails.forEach((email: string) => allEmails.add(email));
       if (searchEmails.size > 0) {
@@ -888,6 +993,7 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       }
     }
     
+    // Last resort: generate common patterns
     if (allEmails.size === 0) {
       console.log(`[EmailExtractor] Still no emails, generating common patterns...`);
       const commonEmails = generateCommonEmails(domain);

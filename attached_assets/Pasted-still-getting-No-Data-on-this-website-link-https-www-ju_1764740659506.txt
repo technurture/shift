@@ -1,0 +1,56 @@
+still getting No Data on this website link https://www.jumia.com.ng/
+1 hour ago
+
+AWS Bedrock needs model access approval - You need to request Claude model access in your AWS Bedrock console
+how can i do this
+1 hour ago
+
+Here's how to enable Claude model access in AWS Bedrock:
+Step-by-Step Guide
+1. Open AWS Bedrock Console
+
+    Go to: https://console.aws.amazon.com/bedrock/home
+    Make sure you're in the us-east-1 region (or your preferred region)
+
+2. Navigate to Model Access
+
+    In the left sidebar, under Bedrock configurations, click Model access
+    Or go directly to: https://console.aws.amazon.com/bedrock/home?#/modelaccess
+
+3. Request Access to Anthropic Claude
+
+    Find Anthropic in the list of model providers
+    Click Modify model access or Request model access
+    Check the box for Claude 3 Haiku (that's what we're using)
+    You can also enable other Claude models if you want
+
+4. Submit Use Case Details (Required for first-time users)
+
+    Fill in a brief description of your use case (e.g., "Email extraction and contact discovery from websites")
+    Click Submit
+
+5. Save Changes
+
+    Important: Click Save changes to finalize
+    Access is typically granted instantly, but can take up to a few minutes
+
+While you set that up, let me improve the email extractor to work better without AI as a fallback. I'll fix the Google search issue and add subdomain discovery so it can find Jumia's emails which are actually on group.jumia.com:
+
+Now let me update the main extraction function to use the new features and scan related domains like group.jumia.com:
+
+The code is fixed and the server is running. Let me check the logs and then you can test Jumia again:
+Checked console and system logs
+
+The server is running with the improved email extractor. I've made several enhancements:
+
+What's new:
+
+    Related Domain Scanning - Now checks domains like group.jumia.com, corporate.jumia.com, etc.
+    Fixed Web Search - Uses DuckDuckGo instead of Google (which was blocking)
+    Smarter Contact Page Discovery - Prioritizes actual contact pages over product pages
+
+You can now test Jumia again! Go to the app, sign in, and try https://www.jumia.com.ng/ again.
+
+About AWS Bedrock setup:
+
+Once you've enabled Claude model access in your AWS Bedrock console (following the steps I shared earlier), the AI-powered analysis will automatically activate. Until then, the extractor will still work using the other methods (HTML scraping, related domains, web search).
