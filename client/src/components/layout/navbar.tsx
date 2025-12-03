@@ -1,6 +1,13 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Home, LayoutDashboard } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Menu, X, Home, LayoutDashboard, Settings, LogOut, ChevronDown, User as UserIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 import icon from "@assets/generated_images/app_icon_for_mailsift.png";
 import { api, type User } from "@/lib/api";
@@ -84,21 +91,41 @@ export function Navbar() {
           {/* CTA Buttons */}
           <div className="hidden md:flex items-center gap-4">
             {isLoggedIn ? (
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground" data-testid="text-user-name">
-                  {user.firstName} {user.lastName}
-                </span>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="border-white/10 hover:bg-white/5 min-h-[44px]"
-                  onClick={() => logoutMutation.mutate()}
-                  disabled={logoutMutation.isPending}
-                  data-testid="button-logout"
-                >
-                  Sign Out
-                </Button>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    className="flex items-center gap-2 text-muted-foreground hover:text-white min-h-[44px]"
+                    data-testid="button-user-menu"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                      <UserIcon className="w-4 h-4 text-primary" />
+                    </div>
+                    <span className="text-sm" data-testid="text-user-name">
+                      {user.firstName} {user.lastName}
+                    </span>
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings" className="flex items-center gap-2 cursor-pointer" data-testid="menu-item-settings">
+                      <Settings className="w-4 h-4" />
+                      Settings
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={() => logoutMutation.mutate()}
+                    disabled={logoutMutation.isPending}
+                    className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+                    data-testid="menu-item-signout"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <>
                 <Link href="/auth?mode=login">
@@ -149,19 +176,29 @@ export function Navbar() {
                 <LayoutDashboard className="w-5 h-5" />
                 Dashboard
               </Link>
+              <Link 
+                href="/settings" 
+                className="flex items-center gap-3 text-lg font-medium text-muted-foreground hover:text-white min-h-[44px] px-2 rounded-md hover:bg-white/5 transition-colors" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                data-testid="mobile-link-settings"
+              >
+                <Settings className="w-5 h-5" />
+                Settings
+              </Link>
               <div className="h-px bg-white/10 my-2" />
               <div className="px-2 py-2 text-sm text-muted-foreground" data-testid="mobile-text-user">
                 Logged in as {user.firstName} {user.lastName}
               </div>
               <Button 
                 variant="outline" 
-                className="w-full min-h-[44px]"
+                className="w-full min-h-[44px] text-destructive hover:text-destructive"
                 onClick={() => {
                   logoutMutation.mutate();
                   setIsMobileMenuOpen(false);
                 }}
                 data-testid="mobile-button-logout"
               >
+                <LogOut className="w-4 h-4 mr-2" />
                 Sign Out
               </Button>
             </>

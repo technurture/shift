@@ -586,6 +586,81 @@ export async function registerRoutes(
     }
   });
 
+  // Change Password Route (for logged-in users)
+  app.post("/api/user/change-password", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+      const { currentPassword, newPassword } = req.body;
+      
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current password and new password are required" });
+      }
+      
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "New password must be at least 6 characters" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const validPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+      
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(userId, { password: hashedPassword });
+      
+      res.json({ success: true, message: "Password changed successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to change password" });
+    }
+  });
+
+  // Delete Account Route
+  app.delete("/api/user/account", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+      const { password } = req.body;
+      
+      if (!password) {
+        return res.status(400).json({ error: "Password is required to confirm account deletion" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ error: "Password is incorrect" });
+      }
+      
+      await storage.deleteUser(userId);
+      
+      req.session.destroy((err: Error | null) => {
+        if (err) {
+          console.error("Error destroying session:", err);
+        }
+      });
+      
+      res.json({ success: true, message: "Account deleted successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete account" });
+    }
+  });
+
   // Contact Form Route
   app.post("/api/contact", async (req, res) => {
     try {
@@ -606,6 +681,39 @@ export async function registerRoutes(
       res.status(500).json({ error: error.message || "Failed to send message" });
     }
   });
+
+  // Helper function to get the base URL for callbacks
+  function getBaseUrl(req: Request): string {
+    // Check for APP_DOMAIN first
+    if (process.env.APP_DOMAIN) {
+      const domain = process.env.APP_DOMAIN;
+      return domain.startsWith('http') ? domain : `https://${domain}`;
+    }
+    
+    // Check for REPLIT_DEV_DOMAIN (development)
+    if (process.env.REPLIT_DEV_DOMAIN) {
+      return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+    }
+    
+    // Check for REPLIT_DOMAINS (production)
+    if (process.env.REPLIT_DOMAINS) {
+      const domains = process.env.REPLIT_DOMAINS.split(',');
+      if (domains.length > 0 && domains[0].trim()) {
+        return `https://${domains[0].trim()}`;
+      }
+    }
+    
+    // Fallback to request origin
+    const origin = req.headers.origin || req.headers.referer;
+    if (origin) {
+      return origin.replace(/\/$/, '');
+    }
+    
+    // Last resort - construct from host header
+    const host = req.headers.host;
+    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    return host ? `${protocol}://${host}` : 'http://localhost:5000';
+  }
 
   // Paystack Payment Routes
   app.post("/api/payment/initialize", async (req, res) => {
@@ -631,6 +739,10 @@ export async function registerRoutes(
         return res.status(500).json({ error: "Payment service not configured" });
       }
       
+      // Construct the callback URL
+      const baseUrl = getBaseUrl(req);
+      const callbackUrl = `${baseUrl}/payment/callback`;
+      
       const response = await fetch("https://api.paystack.co/transaction/initialize", {
         method: "POST",
         headers: {
@@ -640,6 +752,7 @@ export async function registerRoutes(
         body: JSON.stringify({
           email: user.email,
           amount: PLAN_PRICES[plan],
+          callback_url: callbackUrl,
           metadata: {
             userId: user.id,
             plan: plan,

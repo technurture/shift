@@ -113,6 +113,20 @@ class ApiClient {
     });
   }
 
+  async changePassword(data: { currentPassword: string; newPassword: string }) {
+    return this.request<{ success: boolean; message: string }>("/user/change-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAccount(password: string) {
+    return this.request<{ success: boolean; message: string }>("/user/account", {
+      method: "DELETE",
+      body: JSON.stringify({ password }),
+    });
+  }
+
   async sendContactMessage(data: { name: string; email: string; message: string }) {
     return this.request<{ message: string }>("/contact", {
       method: "POST",

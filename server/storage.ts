@@ -7,6 +7,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(userId: string, updates: Partial<User>): Promise<User | undefined>;
+  deleteUser(userId: string): Promise<void>;
   updateUserStats(userId: string, emailsCount: number): Promise<void>;
   updateVerificationCode(userId: string, code: string, expiry: Date): Promise<void>;
   verifyEmail(userId: string): Promise<void>;
@@ -149,6 +150,12 @@ export class MongoStorage implements IStorage {
       { _id: userId },
       { $set: { plan } }
     );
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    const { users, extractions } = await connectToDatabase();
+    await extractions.deleteMany({ userId });
+    await users.deleteOne({ _id: userId });
   }
 
   async createExtraction(extraction: InsertExtraction): Promise<Extraction> {

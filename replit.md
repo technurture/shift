@@ -6,6 +6,11 @@ MailSift is a web and mobile application designed to extract email addresses fro
 
 ## Recent Changes (December 2025)
 
+- Added user settings page with profile update, password change, and account deletion
+- Added dropdown menu in navbar for logged-in users (Settings and Sign Out)
+- Added mobile menu Settings link for mobile navigation
+- Added change password API endpoint with current password verification
+- Added delete account API endpoint with password confirmation
 - Added batch extraction support (up to 10 URLs at once) with batch mode as default
 - Added real-time URL validation with visual indicators (valid/invalid badges)
 - Added URL preview section showing first 5 URLs with "and N more" for larger batches
