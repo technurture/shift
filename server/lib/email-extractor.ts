@@ -36,23 +36,6 @@ const CONTACT_PATHS = [
   '/connect',
 ];
 
-const COMMON_EMAIL_PREFIXES = [
-  'info',
-  'contact',
-  'hello',
-  'support',
-  'help',
-  'sales',
-  'admin',
-  'team',
-  'hi',
-  'office',
-  'mail',
-  'enquiries',
-  'inquiries',
-  'general',
-];
-
 export interface ExtractionResult {
   emails: string[];
   error?: string;
@@ -410,40 +393,6 @@ function findContactLinks(links: string[], baseUrl: string): string[] {
   return contactLinks.slice(0, 10);
 }
 
-async function guessCommonEmails(domain: string): Promise<string[]> {
-  const guessedEmails: string[] = [];
-  
-  for (const prefix of COMMON_EMAIL_PREFIXES) {
-    const email = `${prefix}@${domain}`;
-    if (isValidEmail(email)) {
-      guessedEmails.push(email);
-    }
-  }
-  
-  return guessedEmails;
-}
-
-async function fetchWithRetry(url: string, useBrowser: boolean, retries: number = 2): Promise<string | null> {
-  for (let i = 0; i <= retries; i++) {
-    let html: string | null = null;
-    
-    if (!useBrowser) {
-      html = await fetchPageSimple(url);
-      if (html) return html;
-    }
-    
-    html = await fetchPageWithBrowser(url);
-    if (html) return html;
-    
-    if (i < retries) {
-      console.log(`[EmailExtractor] Retry ${i + 1} for ${url}...`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  }
-  
-  return null;
-}
-
 export async function extractEmailsFromUrl(url: string): Promise<ExtractionResult> {
   try {
     const fullUrl = url.startsWith('http') ? url : `https://${url}`;
@@ -485,15 +434,11 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     }
     
     if (!mainHtml) {
-      console.log(`[EmailExtractor] All fetch methods failed, trying common email patterns...`);
-      
-      const guessedEmails = await guessCommonEmails(domain);
-      console.log(`[EmailExtractor] Generated ${guessedEmails.length} common email patterns for ${domain}`);
-      
+      console.log(`[EmailExtractor] All fetch methods failed`);
       return {
-        emails: guessedEmails.slice(0, 5),
+        emails: [],
         pagesScanned: 0,
-        error: guessedEmails.length > 0 ? undefined : 'Failed to fetch the page. The website may be blocking automated requests or is unavailable.',
+        error: 'Failed to fetch the page. The website may be blocking automated requests or is unavailable.',
       };
     }
     
@@ -536,12 +481,6 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       if (result.success) pagesScanned++;
       result.emails.forEach(email => allEmails.add(email));
     });
-    
-    if (allEmails.size === 0) {
-      console.log(`[EmailExtractor] No emails found from pages, adding common patterns...`);
-      const guessedEmails = await guessCommonEmails(domain);
-      guessedEmails.slice(0, 3).forEach(email => allEmails.add(email));
-    }
     
     const emailArray = Array.from(allEmails);
     console.log(`[EmailExtractor] Total: ${emailArray.length} unique emails from ${pagesScanned} pages`);
