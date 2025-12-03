@@ -85,8 +85,31 @@ class ApiClient {
     });
   }
 
+  async extractEmailsBatch(urls: string[]) {
+    return this.request<{ 
+      processed: number; 
+      totalEmailsFound: number; 
+      results: Array<{
+        url: string;
+        success: boolean;
+        emailsFound: number;
+        extraction: Extraction;
+        error?: string;
+      }>;
+    }>("/extract/batch", {
+      method: "POST",
+      body: JSON.stringify({ urls }),
+    });
+  }
+
   async getExtractions() {
     return this.request<Extraction[]>("/extractions");
+  }
+
+  async deleteExtraction(id: string) {
+    return this.request<{ success: boolean }>(`/extractions/${id}`, {
+      method: "DELETE",
+    });
   }
 
   async getStats() {

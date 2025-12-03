@@ -292,5 +292,108 @@ export async function registerRoutes(
     }
   });
 
+  // Batch extraction endpoint - allows multiple URLs at once
+  app.post("/api/extract/batch", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+      const { urls } = req.body;
+      
+      if (!urls || !Array.isArray(urls) || urls.length === 0) {
+        return res.status(400).json({ error: "URLs array is required" });
+      }
+      
+      // Limit batch size
+      const maxBatchSize = 10;
+      const urlsToProcess = urls.slice(0, maxBatchSize);
+      
+      // Check plan limits
+      const limits = await storage.getUserPlanLimits(userId);
+      const planLimit = PLAN_LIMITS[limits.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
+      
+      if (limits.linksScanned + urlsToProcess.length > planLimit.links) {
+        return res.status(403).json({ 
+          error: `Link scan limit reached. You have ${planLimit.links - limits.linksScanned} scans remaining.`,
+          limitReached: true 
+        });
+      }
+      
+      const results: any[] = [];
+      let totalEmailsFound = 0;
+      
+      // Process URLs sequentially to avoid overwhelming the system
+      for (const url of urlsToProcess) {
+        try {
+          const result = await extractEmailsFromUrl(url);
+          
+          const extraction = await storage.createExtraction({
+            userId,
+            url,
+            status: result.emails.length > 0 ? "success" : "failed",
+            emails: result.emails || [],
+          });
+          
+          if (result.emails.length > 0) {
+            totalEmailsFound += result.emails.length;
+          }
+          
+          results.push({
+            url,
+            success: result.emails.length > 0,
+            emailsFound: result.emails.length,
+            extraction,
+          });
+        } catch (error: any) {
+          const extraction = await storage.createExtraction({
+            userId,
+            url,
+            status: "failed",
+            emails: [],
+          });
+          
+          results.push({
+            url,
+            success: false,
+            emailsFound: 0,
+            error: error.message,
+            extraction,
+          });
+        }
+      }
+      
+      // Update user stats
+      if (totalEmailsFound > 0) {
+        await storage.updateUserStats(userId, totalEmailsFound);
+      }
+      
+      res.json({
+        processed: results.length,
+        totalEmailsFound,
+        results,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Batch extraction failed" });
+    }
+  });
+
+  // Delete extraction
+  app.delete("/api/extractions/:id", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+      const { id } = req.params;
+      await storage.deleteExtraction(id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete extraction" });
+    }
+  });
+
   return httpServer;
 }

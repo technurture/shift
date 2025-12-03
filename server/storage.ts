@@ -10,6 +10,7 @@ export interface IStorage {
   
   createExtraction(extraction: InsertExtraction): Promise<Extraction>;
   getExtractionsByUser(userId: string): Promise<Extraction[]>;
+  deleteExtraction(id: string, userId: string): Promise<void>;
   getUserPlanLimits(userId: string): Promise<{ plan: string; emailsExtracted: number; linksScanned: number }>;
 }
 
@@ -105,6 +106,11 @@ export class MongoStorage implements IStorage {
       emailsExtracted: user.emailsExtracted,
       linksScanned: user.linksScanned,
     };
+  }
+
+  async deleteExtraction(id: string, userId: string): Promise<void> {
+    const { extractions } = await connectToDatabase();
+    await extractions.deleteOne({ _id: id, userId });
   }
 }
 

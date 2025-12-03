@@ -4,6 +4,76 @@
 
 MailSift is a web and mobile application designed to extract email addresses from websites. Users paste a URL, and the application scrapes and returns valid email addresses found on that page. The platform includes user authentication, tiered subscription plans with usage limits, and a modern, user-friendly interface built with React and Express.
 
+## Recent Changes (December 2025)
+
+- Added batch extraction support (up to 10 URLs at once)
+- Added search and filter functionality in extraction history
+- Improved mobile-responsive design throughout dashboard
+- Enhanced email extraction for country-code TLD domains (e.g., .com.ng, .co.uk)
+- Added CSV export functionality
+- Added delete extraction feature
+
+## Local Development Setup
+
+### Prerequisites
+- Node.js 18+ (recommended: Node.js 20)
+- MongoDB (local installation or MongoDB Atlas account)
+
+### Quick Start
+
+1. **Clone the repository and install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Set up environment variables:**
+   ```bash
+   cp .env.example .env
+   ```
+   Then edit `.env` with your values:
+   - `MONGODB_URI`: Your MongoDB connection string
+   - `SESSION_SECRET`: A random string for session encryption
+   - `JWT_SECRET`: A random string for JWT signing
+   - (Optional) AWS credentials for AI-powered extraction
+
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
+   The app will be available at `http://localhost:5000`
+
+### Environment Variables Reference
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MONGODB_URI` | Yes | MongoDB connection string |
+| `SESSION_SECRET` | Yes | Secret for session encryption |
+| `JWT_SECRET` | Yes | Secret for JWT token signing |
+| `AWS_ACCESS_KEY_ID` | No | AWS credentials for Bedrock AI |
+| `AWS_SECRET_ACCESS_KEY` | No | AWS credentials for Bedrock AI |
+| `AWS_REGION` | No | AWS region (default: us-east-1) |
+| `PORT` | No | Server port (default: 5000) |
+
+## Production Deployment
+
+### Build for Production
+```bash
+npm run build
+```
+This creates:
+- `dist/public/` - Frontend static files
+- `dist/index.cjs` - Backend bundle
+
+### Start Production Server
+```bash
+npm run start
+```
+
+### Replit Deployment
+The app is configured for Replit's autoscale deployment:
+- Build: `npm run build`
+- Run: `npm run start`
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
