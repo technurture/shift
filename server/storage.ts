@@ -1,10 +1,6 @@
-import { drizzle } from "drizzle-orm/neon-serverless";
-import { Pool } from "@neondatabase/serverless";
-import { users, extractions, type User, type InsertUser, type Extraction, type InsertExtraction } from "@shared/schema";
-import { eq, desc, sql } from "drizzle-orm";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
-const db = drizzle({ client: pool });
+import { ObjectId } from "mongodb";
+import { connectToDatabase } from "./db";
+import type { User, InsertUser, Extraction, InsertExtraction } from "@shared/schema";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -17,41 +13,86 @@ export interface IStorage {
   getUserPlanLimits(userId: string): Promise<{ plan: string; emailsExtracted: number; linksScanned: number }>;
 }
 
-export class DbStorage implements IStorage {
+export class MongoStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-    return result[0];
+    const { users } = await connectToDatabase();
+    const user = await users.findOne({ _id: id });
+    if (!user) return undefined;
+    
+    const { _id, ...rest } = user;
+    return { id: _id, ...rest } as User;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
-    return result[0];
+    const { users } = await connectToDatabase();
+    const user = await users.findOne({ email });
+    if (!user) return undefined;
+    
+    const { _id, ...rest } = user;
+    return { id: _id, ...rest } as User;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const result = await db.insert(users).values(insertUser).returning();
-    return result[0];
+    const { users } = await connectToDatabase();
+    const id = new ObjectId().toString();
+    const now = new Date();
+    
+    const userDoc = {
+      _id: id,
+      ...insertUser,
+      plan: "free",
+      emailsExtracted: 0,
+      linksScanned: 0,
+      createdAt: now,
+    };
+    
+    await users.insertOne(userDoc);
+    
+    const { _id, ...rest } = userDoc;
+    return { id: _id, ...rest } as User;
   }
 
   async updateUserStats(userId: string, emailsCount: number): Promise<void> {
-    await db.update(users)
-      .set({
-        emailsExtracted: sql`${users.emailsExtracted} + ${emailsCount}`,
-        linksScanned: sql`${users.linksScanned} + 1`,
-      })
-      .where(eq(users.id, userId));
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { 
+        $inc: { 
+          emailsExtracted: emailsCount,
+          linksScanned: 1 
+        } 
+      }
+    );
   }
 
   async createExtraction(extraction: InsertExtraction): Promise<Extraction> {
-    const result = await db.insert(extractions).values(extraction).returning();
-    return result[0];
+    const { extractions } = await connectToDatabase();
+    const id = new ObjectId().toString();
+    const now = new Date();
+    
+    const extractionDoc = {
+      _id: id,
+      ...extraction,
+      scannedAt: now,
+    };
+    
+    await extractions.insertOne(extractionDoc);
+    
+    const { _id, ...rest } = extractionDoc;
+    return { id: _id, ...rest } as Extraction;
   }
 
   async getExtractionsByUser(userId: string): Promise<Extraction[]> {
-    return await db.select()
-      .from(extractions)
-      .where(eq(extractions.userId, userId))
-      .orderBy(desc(extractions.scannedAt));
+    const { extractions } = await connectToDatabase();
+    const docs = await extractions
+      .find({ userId })
+      .sort({ scannedAt: -1 })
+      .toArray();
+    
+    return docs.map(doc => {
+      const { _id, ...rest } = doc;
+      return { id: _id, ...rest } as Extraction;
+    });
   }
 
   async getUserPlanLimits(userId: string): Promise<{ plan: string; emailsExtracted: number; linksScanned: number }> {
@@ -67,4 +108,4 @@ export class DbStorage implements IStorage {
   }
 }
 
-export const storage = new DbStorage();
+export const storage = new MongoStorage();

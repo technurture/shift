@@ -46,3 +46,8 @@ waitForPort = 5000
 [agent]
 mockupState = "FULLSTACK"
 expertMode = true
+
+[userenv]
+
+[userenv.shared]
+JWT_SECRET = "3e9345039d9b0b907e25092422e0397711f8fefb3b4b644429565f377dc4f7a8bebfdb0eef1b574c4affdb1f03a6d6d3f0aa324677a444b067454bd7285b2232"
