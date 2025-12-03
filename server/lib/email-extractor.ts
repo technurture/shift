@@ -344,7 +344,7 @@ If no emails found, respond with: {"emails": [], "confidence": "low"}`;
         }
       } catch (parseError) {
         const foundEmails = text.match(EMAIL_REGEX) || [];
-        foundEmails.forEach(email => {
+        foundEmails.forEach((email: string) => {
           const cleaned = email.toLowerCase().trim();
           if (isValidEmail(cleaned)) {
             emails.add(cleaned);
