@@ -1,7 +1,15 @@
+import dotenv from "dotenv";
 import { MongoClient, Db, Collection } from "mongodb";
 import type { User, Extraction } from "@shared/schema";
 
-const client = new MongoClient(process.env.MONGODB_URL!);
+dotenv.config();
+
+const mongoUrl = process.env.MONGODB_URL;
+if (!mongoUrl) {
+  throw new Error("Missing MONGODB_URL environment variable");
+}
+
+const client = new MongoClient(mongoUrl);
 
 let db: Db;
 let users: Collection<Omit<User, "id"> & { _id: string }>;

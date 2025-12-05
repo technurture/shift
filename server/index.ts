@@ -4,6 +4,9 @@ import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const SessionStore = MemoryStore(session);
 
