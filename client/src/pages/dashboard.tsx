@@ -55,6 +55,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { UpgradeDialog, LimitReachedBanner } from "@/components/upgrade-dialog";
+import { AdPlaceholder, SponsoredContent } from "@/components/ads";
 
 export default function Dashboard() {
   const [inputMode, setInputMode] = useState<"single" | "batch">("batch");
@@ -539,7 +540,29 @@ export default function Dashboard() {
               )}
             </CardContent>
           </Card>
+          
+          {/* Sidebar Ad for Free Users */}
+          {stats?.plan === "free" && (
+            <AdPlaceholder 
+              type="sidebar" 
+              userPlan={stats?.plan}
+              onUpgrade={() => setUpgradeDialogOpen(true)}
+              className="hidden lg:block"
+            />
+          )}
         </div>
+
+        {/* Inline Ad Banner for Free Users */}
+        {stats?.plan === "free" && (
+          <SponsoredContent
+            title="Supercharge Your Lead Generation"
+            description="Upgrade to Premium and get unlimited extractions, API access, and priority support."
+            ctaText="Try Premium Free for 7 Days"
+            ctaUrl="#"
+            userPlan={stats?.plan}
+            className="mb-6"
+          />
+        )}
 
         <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
           <CardHeader className="pb-3">

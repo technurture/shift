@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MailSift</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" stroke="url(#gradient)" stroke-width="2"/>
+          <path d="M8 12L11 15L16 9" stroke="url(#gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="gradient" x1="4" y1="4" x2="20" y2="20">
+              <stop stop-color="#a855f7"/>
+              <stop offset="1" stop-color="#8b5cf6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="logo-text">MailSift</span>
+      </div>
+      <div id="user-status" class="user-status"></div>
+    </header>
+
+    <div id="auth-section" class="section hidden">
+      <p class="auth-message">Sign in to save extracted emails to your account</p>
+      <button id="login-btn" class="btn btn-primary">Sign In to MailSift</button>
+      <p class="auth-note">Don't have an account? <a href="#" id="signup-link">Sign up free</a></p>
+    </div>
+
+    <div id="main-section" class="section">
+      <div class="current-page">
+        <span class="label">Current Page</span>
+        <p id="current-url" class="url-text">Loading...</p>
+      </div>
+
+      <button id="extract-btn" class="btn btn-primary btn-large">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="M21 21l-4.35-4.35"/>
+        </svg>
+        Extract Emails from This Page
+      </button>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <span>Scanning page for emails...</span>
+      </div>
+
+      <div id="results" class="results hidden">
+        <div class="results-header">
+          <span id="email-count" class="email-count">0 emails found</span>
+          <div class="results-actions">
+            <button id="copy-all-btn" class="btn btn-ghost btn-small" title="Copy all">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+              </svg>
+            </button>
+            <button id="save-btn" class="btn btn-ghost btn-small" title="Save to account">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                <polyline points="17,21 17,13 7,13 7,21"/>
+                <polyline points="7,3 7,8 15,8"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <ul id="email-list" class="email-list"></ul>
+      </div>
+
+      <div id="no-results" class="no-results hidden">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M16 16l-4-4m0 0l-4-4m4 4l4-4m-4 4l-4 4"/>
+        </svg>
+        <p>No emails found on this page</p>
+        <span class="hint">Try navigating to a contact or about page</span>
+      </div>
+
+      <div id="error" class="error hidden">
+        <p id="error-message">An error occurred</p>
+        <button id="retry-btn" class="btn btn-ghost btn-small">Try Again</button>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <div class="stats" id="stats-section">
+        <span id="stats-text">Free: 500 emails remaining</span>
+      </div>
+      <a href="#" id="dashboard-link" class="dashboard-link">Open Dashboard</a>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast hidden">
+    <span id="toast-message"></span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
