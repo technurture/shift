@@ -3,7 +3,7 @@
 // Update this with your production domain when deploying
 const API_BASE_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:5000' 
-  : 'https://d018503d-e5cf-41cc-951d-38ee8f1480dd-00-3ntfqh0n42zdc.kirk.replit.dev';
+  : 'https://415e01b1-e6ef-463a-8513-1b94cf932054-00-2illqfo9cdugi.kirk.replit.dev';
 
 let currentEmails = [];
 let isLoggedIn = false;
@@ -186,6 +186,94 @@ function extractEmailsFromPage() {
     const dataEmail = el.getAttribute('data-email') || el.getAttribute('data-mail');
     if (dataEmail && emailRegex.test(dataEmail)) {
       emails.add(dataEmail.toLowerCase());
+    }
+  });
+  
+  // Check for Cloudflare-obfuscated emails (data-cfemail attribute)
+  const cfEmailElements = document.querySelectorAll('[data-cfemail]');
+  cfEmailElements.forEach(el => {
+    const encoded = el.getAttribute('data-cfemail');
+    if (encoded) {
+      try {
+        const decoded = decodeCfEmail(encoded);
+        if (decoded && emailRegex.test(decoded)) {
+          emails.add(decoded.toLowerCase());
+        }
+      } catch (e) {
+        // Skip invalid encoded emails
+      }
+    }
+  });
+  
+  // Decode Cloudflare email protection
+  function decodeCfEmail(encoded) {
+    let email = '';
+    const r = parseInt(encoded.substr(0, 2), 16);
+    for (let i = 2; i < encoded.length; i += 2) {
+      const c = parseInt(encoded.substr(i, 2), 16) ^ r;
+      email += String.fromCharCode(c);
+    }
+    return email;
+  }
+  
+  // Extract from JSON-LD structured data
+  const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+  jsonLdScripts.forEach(script => {
+    try {
+      const data = JSON.parse(script.textContent);
+      extractEmailsFromJsonLd(data);
+    } catch (e) {
+      // Skip invalid JSON
+    }
+  });
+  
+  function extractEmailsFromJsonLd(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    
+    if (Array.isArray(obj)) {
+      obj.forEach(item => extractEmailsFromJsonLd(item));
+      return;
+    }
+    
+    for (const key of Object.keys(obj)) {
+      const value = obj[key];
+      if (typeof value === 'string') {
+        if (key.toLowerCase() === 'email' || key.toLowerCase().includes('email')) {
+          const cleanEmail = value.replace('mailto:', '').toLowerCase();
+          if (emailRegex.test(cleanEmail)) {
+            emails.add(cleanEmail);
+          }
+        }
+        const foundEmails = value.match(emailRegex) || [];
+        foundEmails.forEach(email => emails.add(email.toLowerCase()));
+      } else if (typeof value === 'object') {
+        extractEmailsFromJsonLd(value);
+      }
+    }
+  }
+  
+  // Look for encoded email patterns like [at], (at), [dot], (dot), etc.
+  const encodedEmailPatterns = [
+    /([a-zA-Z0-9._%+-]+)\s*[\[\(]\s*at\s*[\]\)]\s*([a-zA-Z0-9.-]+)\s*[\[\(]\s*dot\s*[\]\)]\s*([a-zA-Z]{2,})/gi,
+    /([a-zA-Z0-9._%+-]+)\s*\[at\]\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi,
+    /([a-zA-Z0-9._%+-]+)\s*\(at\)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi,
+    /([a-zA-Z0-9._%+-]+)\s*@\s*([a-zA-Z0-9.-]+)\s*[\[\(]\s*dot\s*[\]\)]\s*([a-zA-Z]{2,})/gi,
+  ];
+  
+  const pageHtml = document.body.innerHTML || '';
+  
+  encodedEmailPatterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(pageHtml)) !== null) {
+      let email;
+      if (match.length === 4) {
+        email = `${match[1]}@${match[2]}.${match[3]}`.toLowerCase();
+      } else if (match.length === 3) {
+        email = `${match[1]}@${match[2]}`.toLowerCase();
+      }
+      if (email && emailRegex.test(email)) {
+        emails.add(email);
+      }
     }
   });
   

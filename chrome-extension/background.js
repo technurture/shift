@@ -1,7 +1,7 @@
 // MailSift Chrome Extension - Background Service Worker
 
 // Update this with your production domain when deploying
-const API_BASE_URL = 'https://d018503d-e5cf-41cc-951d-38ee8f1480dd-00-3ntfqh0n42zdc.kirk.replit.dev';
+const API_BASE_URL = 'https://415e01b1-e6ef-463a-8513-1b94cf932054-00-2illqfo9cdugi.kirk.replit.dev';
 
 // Listen for installation
 chrome.runtime.onInstalled.addListener((details) => {
