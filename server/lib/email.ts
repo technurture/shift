@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 
 const BRAND_COLOR = "#7C3AED";
 const BRAND_NAME = "MilkTheLink";
-const SUPPORT_EMAIL = "emailshift01@gmail.com";
+const SUPPORT_EMAIL = "milkthelink01@gmail.com";
 
 function getEmailWrapper(content: string): string {
   return `
