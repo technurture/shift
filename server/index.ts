@@ -37,7 +37,7 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "mailsift-session-secret-fallback",
+    secret: process.env.SESSION_SECRET || "milkthelink-session-secret-fallback",
     resave: false,
     saveUninitialized: false,
     store: new SessionStore({

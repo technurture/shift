@@ -236,7 +236,7 @@ export default function Dashboard() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `mailsift-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `milkthelink-export-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
     toast({ description: `Exported ${dataToExport.length} record(s) to CSV` });

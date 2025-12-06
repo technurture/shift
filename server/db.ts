@@ -19,7 +19,7 @@ async function connectToDatabase() {
   if (db) return { db, users, extractions };
   
   await client.connect();
-  db = client.db("mailsift");
+  db = client.db("milkthelink");
   users = db.collection("users");
   extractions = db.collection("extractions");
   

@@ -137,14 +137,14 @@ async function saveExtraction(data) {
 // Context menu for quick extraction
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: 'mailsift-extract',
+    id: 'milkthelink-extract',
     title: 'Extract emails with MilkTheLink',
     contexts: ['page', 'selection']
   });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'mailsift-extract') {
+  if (info.menuItemId === 'milkthelink-extract') {
     // Open popup or trigger extraction
     chrome.action.openPopup();
   }
