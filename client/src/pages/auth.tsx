@@ -12,10 +12,16 @@ import { useToast } from "@/hooks/use-toast";
 
 type AuthView = "login" | "signup" | "verify-email" | "forgot-password" | "reset-password";
 
+function getInitialView(): AuthView {
+  const searchParams = new URLSearchParams(window.location.search);
+  const mode = searchParams.get("mode");
+  return mode === "signup" ? "signup" : "login";
+}
+
 export default function AuthPage() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
-  const [view, setView] = useState<AuthView>("login");
+  const [view, setView] = useState<AuthView>(getInitialView);
   const [email, setEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState(["", "", "", "", "", ""]);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -23,13 +29,6 @@ export default function AuthPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { toast } = useToast();
-  
-  const searchParams = new URLSearchParams(window.location.search);
-  const mode = searchParams.get("mode");
-  
-  if (mode === "signup" && view === "login") {
-    setView("signup");
-  }
 
   const handleCodeChange = (index: number, value: string) => {
     if (value.length > 1) {
