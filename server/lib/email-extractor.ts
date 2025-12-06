@@ -11,13 +11,253 @@ const OBFUSCATED_PATTERNS = [
   /([a-zA-Z0-9._%+-]+)\s*\[at\]\s*([a-zA-Z0-9.-]+)\s*\[dot\]\s*([a-zA-Z]{2,})/gi,
   /([a-zA-Z0-9._%+-]+)\s*\(at\)\s*([a-zA-Z0-9.-]+)\s*\(dot\)\s*([a-zA-Z]{2,})/gi,
   /([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+)\s+dot\s+([a-zA-Z]{2,})/gi,
+  /([a-zA-Z0-9._%+-]+)\s*<at>\s*([a-zA-Z0-9.-]+)\s*<dot>\s*([a-zA-Z]{2,})/gi,
+  /([a-zA-Z0-9._%+-]+)\s*{at}\s*([a-zA-Z0-9.-]+)\s*{dot}\s*([a-zA-Z]{2,})/gi,
+  /([a-zA-Z0-9._%+-]+)\s*#at#\s*([a-zA-Z0-9.-]+)\s*#dot#\s*([a-zA-Z]{2,})/gi,
+  /([a-zA-Z0-9._%+-]+)\s*-at-\s*([a-zA-Z0-9.-]+)\s*-dot-\s*([a-zA-Z]{2,})/gi,
+  /([a-zA-Z0-9._%+-]+)\s*_at_\s*([a-zA-Z0-9.-]+)\s*_dot_\s*([a-zA-Z]{2,})/gi,
+  /([a-zA-Z0-9._%+-]+)\s*@\s*([a-zA-Z0-9.-]+)\s*\(dot\)\s*([a-zA-Z]{2,})/gi,
+  /([a-zA-Z0-9._%+-]+)\s*\(at\)\s*([a-zA-Z0-9.-]+)\s*\.\s*([a-zA-Z]{2,})/gi,
 ];
 
+const CRITICAL_POLICY_PATHS = [
+  '/policies/terms-of-service',
+  '/policies/privacy-policy',
+  '/policies/refund-policy',
+  '/policies/shipping-policy',
+  '/policies/contact-information',
+  '/policies/legal-notice',
+  '/policies/terms',
+  '/policies/privacy',
+  '/policies/tos',
+  '/terms-of-service',
+  '/privacy-policy',
+  '/terms-and-conditions',
+  '/legal/terms',
+  '/legal/privacy',
+  '/tos',
+  '/pages/terms-of-service',
+  '/pages/privacy-policy',
+  '/pages/terms-and-conditions',
+  '/pages/contact-us',
+  '/pages/about-us',
+  '/pages/contact',
+  '/pages/about',
+  '/pages/legal',
+  '/pages/imprint',
+  '/page/terms-of-service',
+  '/page/privacy-policy',
+  '/page/contact',
+  '/page/about',
+  '/checkout',
+  '/cart',
+  '/checkouts',
+  '/account',
+  '/account/login',
+  '/account/register',
+  '/pages/faq',
+  '/pages/faqs',
+  '/pages/shipping',
+  '/pages/returns',
+  '/pages/warranty',
+  '/pages/size-guide',
+  '/pages/track-order',
+  '/pages/order-tracking',
+  '/collections',
+  '/products',
+  '/apps/helpdesk',
+  '/apps/help-center',
+  '/apps/contact-form',
+  // Shopify specific paths
+  '/checkout/contact_information',
+  '/checkout/shipping',
+  '/checkout/payment',
+  '/checkout/thank_you',
+  '/account/addresses',
+  '/account/orders',
+  '/orders/customer_lookup',
+  '/tools/recurring',
+  '/a/account',
+  '/a/orders',
+  '/apps/easy-contact-form',
+  '/apps/formbuilder',
+  '/community/store-information',
+  '/admin/settings',
+  // WordPress specific paths
+  '/wp-content/themes',
+  '/wp-admin',
+  '/wp-login.php',
+  '/wp-includes',
+  '/xmlrpc.php',
+  '/wp-json/contact-form-7',
+  '/wp-json/wp/v2/pages',
+  '/wp-content/plugins/contact-form-7',
+  '/author',
+  '/feed',
+  // WooCommerce specific paths
+  '/my-account',
+  '/my-account/edit-account',
+  '/my-account/orders',
+  '/my-account/addresses',
+  '/wc-api',
+  '/shop',
+  '/product-category',
+  '/product',
+  '/woocommerce',
+  '/checkout/order-pay',
+  '/checkout/order-received',
+  '/shop/customer-service',
+  '/shop/contact',
+  // Magento specific paths
+  '/customer/account',
+  '/customer/account/login',
+  '/customer/account/create',
+  '/checkout/cart',
+  '/checkout/onepage',
+  '/sales/order/history',
+  '/contacts',
+  '/catalogsearch',
+  '/cms/page',
+  '/cms/noroute',
+  // BigCommerce specific paths
+  '/account.php',
+  '/cart.php',
+  '/checkout.php',
+  '/createaccount.php',
+  '/login.php',
+  '/wishlist.php',
+  // PrestaShop specific paths
+  '/contact-us',
+  '/my-account',
+  '/order-history',
+  '/addresses',
+  '/identity',
+  '/module/contactform/contactform',
+  // OpenCart specific paths
+  '/index.php?route=account/account',
+  '/index.php?route=checkout/checkout',
+  '/index.php?route=information/contact',
+  // Squarespace specific paths
+  '/config',
+  '/commerce',
+  '/api/commerce',
+  // Wix specific paths
+  '/_api/wix-ecommerce',
+  '/_api/members',
+  '/members-area',
+  // CRM and Support platforms
+  '/support/tickets',
+  '/support/new',
+  '/helpdesk',
+  '/ticket',
+  '/tickets',
+  '/submit-request',
+  '/hc/en-us/requests/new',
+  '/knowledge-base',
+  '/kb',
+  '/zendesk',
+  '/freshdesk',
+  '/intercom',
+  '/hubspot',
+  '/salesforce',
+  '/crm',
+  '/customer-portal',
+  '/portal',
+  '/client-area',
+  '/clientarea',
+  '/members',
+  '/membership',
+  '/dashboard',
+  '/user/dashboard',
+  '/account/dashboard',
+];
+
+// Platform detection patterns
+const PLATFORM_SIGNATURES = {
+  shopify: [
+    'cdn.shopify.com',
+    'myshopify.com',
+    'shopify-assets',
+    'Shopify.theme',
+    'shopify_analytics',
+    'ShopifyAnalytics',
+    '/checkouts/',
+    'shopify_pay',
+  ],
+  wordpress: [
+    'wp-content',
+    'wp-includes',
+    'wp-json',
+    'WordPress',
+    'xmlrpc.php',
+    'wp-admin',
+    'wp-login.php',
+  ],
+  woocommerce: [
+    'woocommerce',
+    'wc-add-to-cart',
+    'wc_add_to_cart',
+    'WooCommerce',
+    '/wc-api/',
+    'wc-blocks',
+  ],
+  magento: [
+    'Mage.',
+    'mage/',
+    '/static/version',
+    'Magento_',
+    'catalogsearch',
+    '/customer/account',
+  ],
+  bigcommerce: [
+    'cdn.bigcommerce.com',
+    'stencil',
+    'bigcommerce',
+    '/api/storefront/',
+  ],
+  squarespace: [
+    'squarespace.com',
+    'static1.squarespace.com',
+    'sqsp',
+    'sqs-layout',
+  ],
+  wix: [
+    'wix.com',
+    'wixsite.com',
+    'wix-users',
+    '_wix_',
+    'parastorage.com',
+  ],
+  hubspot: [
+    'hubspot.com',
+    'hs-scripts.com',
+    'hsforms.com',
+    'HubSpot',
+  ],
+  zendesk: [
+    'zendesk.com',
+    'zdassets.com',
+    'zopim',
+    'zendesk_widget',
+  ],
+  salesforce: [
+    'force.com',
+    'salesforce.com',
+    'salesforce-experience',
+  ],
+  freshdesk: [
+    'freshdesk.com',
+    'freshworks.com',
+  ],
+};
+
 const PRIORITY_CONTACT_PATHS = [
+  ...CRITICAL_POLICY_PATHS,
   '/contact',
   '/contact-us',
   '/contactus',
   '/contact.html',
+  '/contact.php',
   '/about/contact',
   '/about-us/contact',
   '/support',
@@ -25,39 +265,63 @@ const PRIORITY_CONTACT_PATHS = [
   '/help',
   '/help/contact',
   '/help-center',
+  '/helpcenter',
   '/customer-service',
   '/customer-support',
   '/get-in-touch',
   '/reach-us',
+  '/write-to-us',
+  '/email-us',
   '/about',
   '/about-us',
   '/aboutus',
+  '/about.html',
   '/company',
   '/company/about',
   '/team',
   '/our-team',
+  '/meet-the-team',
+  '/leadership',
+  '/management',
   '/legal',
   '/legal/terms',
   '/legal/privacy',
+  '/legal/tos',
+  '/legal/terms-of-service',
   '/privacy',
   '/privacy-policy',
+  '/privacypolicy',
   '/terms',
+  '/terms-of-service',
+  '/termsofservice',
   '/terms-and-conditions',
+  '/termsandconditions',
+  '/tos',
+  '/t-and-c',
+  '/tc',
+  '/conditions',
+  '/disclaimer',
   '/imprint',
   '/impressum',
   '/info',
   '/information',
   '/faq',
   '/faqs',
+  '/frequently-asked-questions',
   '/careers',
   '/jobs',
+  '/work-with-us',
+  '/join-us',
   '/press',
   '/media',
   '/newsroom',
+  '/news',
+  '/blog',
   '/sp-help-center',
   '/seller-center',
   '/vendor',
   '/partners',
+  '/become-a-partner',
   '/sp-contact',
   '/sp-about_us',
   '/login',
@@ -68,6 +332,32 @@ const PRIORITY_CONTACT_PATHS = [
   '/register',
   '/authentication',
   '/auth',
+  '/footer',
+  '/sitemap',
+  '/site-map',
+  '/pages/contact',
+  '/pages/about',
+  '/pages/terms',
+  '/pages/privacy',
+  '/page/contact',
+  '/page/about',
+  '/page/terms',
+  '/en/contact',
+  '/en/about',
+  '/en/terms',
+  '/us/contact',
+  '/us/about',
+  // WooCommerce and other e-commerce platforms (not in CRITICAL_POLICY_PATHS)
+  '/shop/terms-and-conditions',
+  '/shop/privacy-policy',
+  '/store/terms',
+  '/store/privacy',
+  '/policy/terms',
+  '/policy/privacy',
+  '/policy/tos',
+  '/info/contact',
+  '/info/about',
+  '/info/terms',
 ];
 
 const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -174,7 +464,37 @@ async function getBrowser() {
 
 type DeviceMode = 'desktop' | 'mobile';
 
-async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop'): Promise<string | null> {
+function isPolicyPage(url: string): boolean {
+  const lowerUrl = url.toLowerCase();
+  const policyKeywords = [
+    'policies', 'policy', 'terms', 'privacy', 'legal', 'tos', 
+    'terms-of-service', 'privacy-policy', 'refund', 'shipping',
+    'conditions', 'disclaimer', 'imprint', 'impressum'
+  ];
+  return policyKeywords.some(keyword => lowerUrl.includes(keyword));
+}
+
+function isShopifyOrEcommerce(html: string): boolean {
+  const shopifyIndicators = [
+    'cdn.shopify.com',
+    'shopify.com',
+    'Shopify.theme',
+    'shopify-section',
+    'ShopifyAnalytics',
+    'myshopify.com',
+    'woocommerce',
+    'WooCommerce',
+    'bigcommerce',
+    'BigCommerce',
+    'magento',
+    'Magento',
+    'prestashop',
+    'opencart'
+  ];
+  return shopifyIndicators.some(indicator => html.includes(indicator));
+}
+
+async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false): Promise<string | null> {
   let page: any = null;
   try {
     const browser = await getBrowser();
@@ -203,15 +523,52 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
     
     await new Promise(resolve => setTimeout(resolve, waitTime));
     
-    await page.evaluate(() => {
-      window.scrollTo(0, document.body.scrollHeight);
-    });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    await page.evaluate(() => {
-      window.scrollTo(0, 0);
-    });
-    await new Promise(resolve => setTimeout(resolve, 500));
+    if (fullScroll || isPolicyPage(url)) {
+      await page.evaluate(async () => {
+        const scrollStep = 400;
+        const scrollDelay = 80;
+        const maxScrolls = 20;
+        let scrollCount = 0;
+        let lastHeight = 0;
+        let stableCount = 0;
+        
+        while (scrollCount < maxScrolls && stableCount < 2) {
+          const currentHeight = document.body.scrollHeight;
+          if (currentHeight === lastHeight) {
+            stableCount++;
+          } else {
+            stableCount = 0;
+            lastHeight = currentHeight;
+          }
+          
+          window.scrollBy(0, scrollStep);
+          await new Promise(r => setTimeout(r, scrollDelay));
+          
+          if (window.scrollY + window.innerHeight >= document.body.scrollHeight) {
+            break;
+          }
+          scrollCount++;
+        }
+        
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } else {
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
     
     const html = await page.content();
     return html;
@@ -228,8 +585,9 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
 }
 
 async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Promise<{ html: string | null; mobileHtml: string | null; emails: Set<string>; usedMobile: boolean }> {
-  console.log(`[EmailExtractor] Fetching with desktop viewport: ${url}`);
-  const desktopHtml = await fetchPageWithBrowser(url, waitTime, 'desktop');
+  const shouldFullScroll = isPolicyPage(url);
+  console.log(`[EmailExtractor] Fetching with desktop viewport: ${url}${shouldFullScroll ? ' (full scroll for policy page)' : ''}`);
+  const desktopHtml = await fetchPageWithBrowser(url, waitTime, 'desktop', shouldFullScroll);
   
   let allEmails = new Set<string>();
   let usedMobile = false;
@@ -242,7 +600,7 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
     
     if (desktopEmails.size < 2) {
       console.log(`[EmailExtractor] Few emails found on desktop, trying mobile viewport...`);
-      const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile');
+      const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile', shouldFullScroll);
       
       if (mobileHtml) {
         mobileHtmlResult = mobileHtml;
@@ -261,7 +619,7 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
     }
   } else {
     console.log(`[EmailExtractor] Desktop fetch failed, trying mobile as fallback...`);
-    const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile');
+    const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile', shouldFullScroll);
     
     if (mobileHtml) {
       mobileHtmlResult = mobileHtml;
@@ -591,7 +949,7 @@ async function fetchSitemap(baseUrl: string): Promise<string[]> {
     console.log(`[EmailExtractor] Sitemap fetch failed: ${error.message}`);
   }
   
-  return contactUrls.slice(0, 10);
+  return contactUrls.slice(0, 20);
 }
 
 function extractEmailsFromHtml(html: string): Set<string> {
@@ -734,7 +1092,231 @@ function extractEmailsFromHtml(html: string): Set<string> {
     }
   });
   
+  // Extract from HTML comments
+  const commentRegex = /<!--[\s\S]*?-->/g;
+  const comments = html.match(commentRegex) || [];
+  comments.forEach(comment => {
+    const found = comment.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  // Extract from inline scripts (not removed)
+  const fullHtmlWithScripts = cheerio.load(html).html();
+  const scriptContentRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  let scriptMatch;
+  while ((scriptMatch = scriptContentRegex.exec(fullHtmlWithScripts)) !== null) {
+    const scriptContent = scriptMatch[1];
+    const found = scriptContent.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  }
+  
+  // Shopify-specific extraction
+  $('[data-shop-id], [data-shop-name], [data-shop-email]').each((_, el) => {
+    const shopEmail = $(el).attr('data-shop-email') || '';
+    if (shopEmail && isValidEmail(shopEmail.toLowerCase())) {
+      emails.add(shopEmail.toLowerCase());
+    }
+  });
+  
+  // Shopify checkout form fields
+  $('input[name*="email"], input[type="email"], input[id*="email"], input[placeholder*="email"], input[autocomplete*="email"]').each((_, el) => {
+    const placeholder = $(el).attr('placeholder') || '';
+    const value = $(el).attr('value') || '';
+    [placeholder, value].forEach(v => {
+      const found = v.match(EMAIL_REGEX);
+      if (found) {
+        found.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+    });
+  });
+  
+  // E-commerce store info sections
+  $('[class*="store-info"], [class*="shop-info"], [class*="merchant"], [class*="seller"], [class*="vendor"], [id*="store-info"], [id*="shop-info"]').each((_, el) => {
+    const text = $(el).text();
+    const found = text.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  // WordPress author meta
+  $('.author-info, .author-box, [class*="author"], .entry-author, .post-author, .vcard').each((_, el) => {
+    const text = $(el).text();
+    const found = text.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  // WooCommerce store details
+  $('.woocommerce-store-info, .woocommerce-info, [class*="woo"], .store-email, .shop-email').each((_, el) => {
+    const text = $(el).text();
+    const found = text.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  // CRM and helpdesk widgets
+  $('[class*="zendesk"], [class*="freshdesk"], [class*="intercom"], [class*="hubspot"], [class*="drift"], [class*="crisp"], [class*="tawk"], [class*="livechat"]').each((_, el) => {
+    const text = $(el).text();
+    const found = text.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  // Hidden elements that might contain emails
+  $('input[type="hidden"], [style*="display:none"], [style*="display: none"], [hidden], .hidden, .visually-hidden, .sr-only').each((_, el) => {
+    const element = $(el);
+    const value = element.attr('value') || '';
+    const text = element.text();
+    [value, text].forEach(v => {
+      const found = v.match(EMAIL_REGEX);
+      if (found) {
+        found.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+    });
+  });
+  
+  // Data attributes that might contain email info
+  $('*').each((_, el) => {
+    const element = $(el);
+    const attrs = element.attr();
+    if (attrs) {
+      ['data-customer-email', 'data-user-email', 'data-merchant-email', 'data-seller-email', 
+       'data-vendor-email', 'data-store-email', 'data-shop-email', 'data-support-email',
+       'data-contact-email', 'data-billing-email', 'data-receipt-email', 'data-order-email',
+       'data-notify-email', 'data-admin-email', 'data-owner-email'].forEach(attr => {
+        const value = element.attr(attr);
+        if (value && isValidEmail(value.toLowerCase())) {
+          emails.add(value.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  // VCard/hCard microformat extraction
+  $('.vcard .email, .h-card .p-email, [itemprop="email"]').each((_, el) => {
+    const email = $(el).text() || $(el).attr('href')?.replace('mailto:', '') || '';
+    if (email && isValidEmail(email.toLowerCase())) {
+      emails.add(email.toLowerCase());
+    }
+  });
+  
+  // Schema.org extraction from any element
+  $('[itemtype*="Organization"], [itemtype*="LocalBusiness"], [itemtype*="Person"], [itemtype*="ContactPoint"]').each((_, el) => {
+    const text = $(el).text();
+    const found = text.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
   return emails;
+}
+
+// Platform detection function
+function detectPlatform(html: string): string[] {
+  const detectedPlatforms: string[] = [];
+  const lowerHtml = html.toLowerCase();
+  
+  for (const [platform, signatures] of Object.entries(PLATFORM_SIGNATURES)) {
+    for (const sig of signatures) {
+      if (lowerHtml.includes(sig.toLowerCase())) {
+        if (!detectedPlatforms.includes(platform)) {
+          detectedPlatforms.push(platform);
+        }
+        break;
+      }
+    }
+  }
+  
+  return detectedPlatforms;
+}
+
+// Get platform-specific paths based on detected platform
+function getPlatformSpecificPaths(platforms: string[]): string[] {
+  const paths: string[] = [];
+  
+  if (platforms.includes('shopify')) {
+    paths.push(
+      '/checkout', '/cart', '/checkouts', '/account', '/account/login',
+      '/account/register', '/account/addresses', '/account/orders',
+      '/orders/customer_lookup', '/tools/recurring', '/a/account', '/a/orders',
+      '/policies/terms-of-service', '/policies/privacy-policy', '/policies/refund-policy',
+      '/policies/shipping-policy', '/policies/contact-information',
+      '/pages/contact-us', '/pages/about-us', '/pages/faq', '/pages/shipping',
+      '/pages/returns', '/apps/helpdesk', '/apps/help-center',
+      '/collections/all', '/products.json', '/admin/shop.json'
+    );
+  }
+  
+  if (platforms.includes('wordpress') || platforms.includes('woocommerce')) {
+    paths.push(
+      '/wp-admin', '/wp-login.php', '/author', '/feed',
+      '/my-account', '/my-account/edit-account', '/my-account/orders',
+      '/shop', '/product-category', '/checkout', '/cart',
+      '/contact', '/about', '/about-us', '/contact-us'
+    );
+  }
+  
+  if (platforms.includes('magento')) {
+    paths.push(
+      '/customer/account', '/customer/account/login', '/customer/account/create',
+      '/checkout/cart', '/checkout/onepage', '/sales/order/history',
+      '/contacts', '/catalogsearch', '/cms/page'
+    );
+  }
+  
+  if (platforms.includes('hubspot') || platforms.includes('zendesk') || platforms.includes('freshdesk') || platforms.includes('salesforce')) {
+    paths.push(
+      '/contact', '/support', '/help', '/helpdesk', '/ticket', '/tickets',
+      '/submit-request', '/knowledge-base', '/kb', '/hc/en-us/requests/new'
+    );
+  }
+  
+  return [...new Set(paths)];
 }
 
 function decodeCloudflareEmail(encodedString: string): string | null {
@@ -781,7 +1363,59 @@ function isValidEmail(email: string): boolean {
   
   if (domain.startsWith('.') || domain.endsWith('.')) return false;
   
+  const commonEmailDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'mail.com', 'protonmail.com', 'live.com', 'msn.com', 'ymail.com'];
+  for (const commonDomain of commonEmailDomains) {
+    if (domain.includes(commonDomain) && domain !== commonDomain) {
+      return false;
+    }
+  }
+  
   return true;
+}
+
+function extractFooterLinks(html: string, baseUrl: string): string[] {
+  const $ = cheerio.load(html);
+  const footerLinks = new Set<string>();
+  const baseUrlObj = new URL(baseUrl);
+  
+  const footerSelectors = [
+    'footer',
+    '[class*="footer"]',
+    '[id*="footer"]',
+    '[class*="bottom"]',
+    '[id*="bottom"]',
+    '[class*="legal"]',
+    '[id*="legal"]',
+    '[class*="site-info"]',
+    '[role="contentinfo"]',
+  ];
+  
+  footerSelectors.forEach(selector => {
+    $(selector).find('a[href]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (!href) return;
+      
+      try {
+        let fullUrl: string;
+        if (href.startsWith('http')) {
+          fullUrl = href;
+        } else if (href.startsWith('/')) {
+          fullUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${href}`;
+        } else if (!href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('javascript:')) {
+          fullUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}/${href}`;
+        } else {
+          return;
+        }
+        
+        const linkUrl = new URL(fullUrl);
+        if (linkUrl.host === baseUrlObj.host) {
+          footerLinks.add(linkUrl.href.split('#')[0].split('?')[0]);
+        }
+      } catch {}
+    });
+  });
+  
+  return Array.from(footerLinks);
 }
 
 function extractLinksFromHtml(html: string, baseUrl: string): string[] {
@@ -812,39 +1446,50 @@ function extractLinksFromHtml(html: string, baseUrl: string): string[] {
     } catch {}
   });
   
+  const footerLinks = extractFooterLinks(html, baseUrl);
+  footerLinks.forEach(link => links.add(link));
+  
   return Array.from(links);
 }
 
 function findContactLinks(links: string[], baseUrl: string): string[] {
   const contactLinks: string[] = [];
+  const otherLinks: string[] = [];
   const baseUrlObj = new URL(baseUrl);
   const addedPaths = new Set<string>();
   
-  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us', 'sp-contact', 'sp-about'];
-  const mediumPriorityKeywords = ['team', 'company', 'legal', 'privacy', 'terms', 'faq', 'info', 'careers'];
-  const lowPriorityKeywords = ['press', 'media', 'partners', 'investors', 'newsroom'];
+  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us', 'sp-contact', 'sp-about', 'email', 'write-to-us', 'policies', 'policy'];
+  const mediumPriorityKeywords = ['team', 'company', 'legal', 'privacy', 'terms', 'tos', 'faq', 'info', 'careers', 'footer', 'service', 'imprint', 'impressum', 'disclaimer', 'conditions', 'refund', 'shipping'];
+  const lowPriorityKeywords = ['press', 'media', 'partners', 'investors', 'newsroom', 'blog', 'news', 'join'];
   
-  const productKeywords = ['product', 'item', 'shop', 'buy', 'cart', 'checkout', 'category', 'categories', 'search', 'filter', 'price', 'sale', 'deal', 'offer', 'brand', 'store', '.html', 'mpg', 'sku', 'ref'];
+  const productKeywords = ['product/', 'item/', 'shop/', 'buy/', 'cart', 'checkout', 'category/', 'categories/', 'search?', 'filter?', 'price=', '/sale/', '/deal/', '/offer/', '/store/', '/collections/', 'sku=', 'ref=', 'add-to-', 'wishlist', '/p/', '/pd/'];
   
   for (const link of links) {
     const lowerLink = link.toLowerCase();
-    const path = new URL(link).pathname;
-    
-    if (productKeywords.some(keyword => lowerLink.includes(keyword))) {
-      continue;
-    }
-    
-    if (highPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
-      if (!addedPaths.has(path)) {
-        contactLinks.unshift(link);
-        addedPaths.add(path);
+    try {
+      const path = new URL(link).pathname;
+      
+      if (productKeywords.some(keyword => lowerLink.includes(keyword))) {
+        continue;
       }
-    } else if (mediumPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
-      if (!addedPaths.has(path)) {
-        contactLinks.push(link);
-        addedPaths.add(path);
+      
+      if (highPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
+        if (!addedPaths.has(path)) {
+          contactLinks.unshift(link);
+          addedPaths.add(path);
+        }
+      } else if (mediumPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
+        if (!addedPaths.has(path)) {
+          contactLinks.push(link);
+          addedPaths.add(path);
+        }
+      } else if (lowPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
+        if (!addedPaths.has(path)) {
+          otherLinks.push(link);
+          addedPaths.add(path);
+        }
       }
-    }
+    } catch {}
   }
   
   for (const path of PRIORITY_CONTACT_PATHS) {
@@ -855,7 +1500,7 @@ function findContactLinks(links: string[], baseUrl: string): string[] {
     }
   }
   
-  return contactLinks.slice(0, 15);
+  return [...contactLinks, ...otherLinks].slice(0, 35);
 }
 
 function generateCommonEmails(domain: string): string[] {
@@ -1066,7 +1711,76 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       methodsUsed.push('ai_analysis');
     }
     
-    console.log(`[EmailExtractor] Step 2: Scanning all priority contact paths...`);
+    const isEcommerceSite = isShopifyOrEcommerce(rootHtml);
+    if (isEcommerceSite) {
+      console.log(`[EmailExtractor] Detected e-commerce/Shopify site - will use aggressive scanning for policy pages`);
+      methodsUsed.push('ecommerce_detection');
+    }
+    
+    // Platform detection for targeted scanning
+    const detectedPlatforms = detectPlatform(rootHtml);
+    if (detectedPlatforms.length > 0) {
+      console.log(`[EmailExtractor] Detected platforms: ${detectedPlatforms.join(', ')}`);
+      methodsUsed.push(`platforms:${detectedPlatforms.join(',')}`);
+    }
+    
+    // Get platform-specific paths to scan
+    const platformPaths = getPlatformSpecificPaths(detectedPlatforms);
+    console.log(`[EmailExtractor] Adding ${platformPaths.length} platform-specific paths to scan`);
+    
+    console.log(`[EmailExtractor] Step 2: Scanning critical policy pages first (Terms of Service, Privacy Policy, etc.)...`);
+    const criticalPolicyUrls: string[] = [];
+    const addedPolicyPaths = new Set<string>();
+    
+    // Add platform-specific paths first (higher priority for detected platforms)
+    for (const path of platformPaths) {
+      if (!addedPolicyPaths.has(path)) {
+        criticalPolicyUrls.push(`${baseUrl}${path}`);
+        addedPolicyPaths.add(path);
+      }
+    }
+    
+    // Add general critical policy paths
+    for (const path of CRITICAL_POLICY_PATHS) {
+      if (!addedPolicyPaths.has(path)) {
+        criticalPolicyUrls.push(`${baseUrl}${path}`);
+        addedPolicyPaths.add(path);
+      }
+    }
+    
+    const policyScannedUrls = new Set<string>();
+    for (const policyUrl of criticalPolicyUrls.slice(0, 20)) {
+      if (policyScannedUrls.has(policyUrl)) continue;
+      policyScannedUrls.add(policyUrl);
+      
+      try {
+        console.log(`[EmailExtractor] Scanning critical policy page: ${policyUrl}`);
+        const html = await fetchPageWithBrowser(policyUrl, 4000, 'desktop', true);
+        
+        if (html) {
+          const emails = extractEmailsFromHtml(html);
+          if (emails.size > 0) {
+            console.log(`[EmailExtractor] Found ${emails.size} emails in policy page: ${policyUrl}`);
+            emails.forEach(e => allEmails.add(e));
+          } else {
+            const pageText = cheerio.load(html)('body').text();
+            combinedTextForAI += '\n\n--- Policy Page: ' + policyUrl + ' ---\n' + pageText;
+            const aiEmails = await analyzeWithAI(pageText, domain);
+            aiEmails.forEach(e => allEmails.add(e));
+            if (aiEmails.size > 0) {
+              console.log(`[EmailExtractor] AI found ${aiEmails.size} emails in policy page: ${policyUrl}`);
+            }
+          }
+          pagesScanned++;
+        }
+      } catch (err: any) {
+        console.log(`[EmailExtractor] Failed to scan policy page ${policyUrl}: ${err.message}`);
+      }
+    }
+    
+    console.log(`[EmailExtractor] After policy pages: found ${allEmails.size} emails so far`);
+    
+    console.log(`[EmailExtractor] Step 3: Scanning other priority contact paths...`);
     const allPriorityUrls: string[] = [];
     for (const path of PRIORITY_CONTACT_PATHS) {
       allPriorityUrls.push(`${baseUrl}${path}`);
@@ -1078,21 +1792,24 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     
     const uniqueContactUrls = new Set<string>();
     for (const url of allPriorityUrls) {
-      uniqueContactUrls.add(url);
+      if (!policyScannedUrls.has(url)) {
+        uniqueContactUrls.add(url);
+      }
     }
     for (const url of contactLinks) {
-      uniqueContactUrls.add(url);
+      if (!policyScannedUrls.has(url)) {
+        uniqueContactUrls.add(url);
+      }
     }
-    // Exclude URLs we've already scanned
     uniqueContactUrls.delete(rootUrl);
     uniqueContactUrls.delete(baseUrl);
     if (isUserUrlDifferentFromRoot) {
       uniqueContactUrls.delete(userProvidedUrl);
     }
     
-    console.log(`[EmailExtractor] Found ${uniqueContactUrls.size} unique contact/priority pages to scan`);
+    console.log(`[EmailExtractor] Found ${uniqueContactUrls.size} additional contact/priority pages to scan`);
     
-    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 15);
+    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 25);
     
     const scanPromises = urlsToScan.map(async (link) => {
       try {
@@ -1100,7 +1817,9 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
         let mobileHtml: string | null = null;
         let emails = new Set<string>();
         
-        if (usedBrowser) {
+        const shouldUseBrowser = usedBrowser || isEcommerceSite || isPolicyPage(link);
+        
+        if (shouldUseBrowser) {
           const result = await fetchWithMobileFallback(link, 3000);
           html = result.html;
           mobileHtml = result.mobileHtml;
@@ -1118,7 +1837,6 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
           }
         }
         
-        // If no emails found, try AI analysis with both desktop and mobile content
         if (html && emails.size === 0) {
           let pageText = cheerio.load(html)('body').text();
           if (mobileHtml) {
