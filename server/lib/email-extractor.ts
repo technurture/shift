@@ -13,7 +13,58 @@ const OBFUSCATED_PATTERNS = [
   /([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+)\s+dot\s+([a-zA-Z]{2,})/gi,
 ];
 
+const CRITICAL_POLICY_PATHS = [
+  '/policies/terms-of-service',
+  '/policies/privacy-policy',
+  '/policies/refund-policy',
+  '/policies/shipping-policy',
+  '/policies/contact-information',
+  '/policies/legal-notice',
+  '/policies/terms',
+  '/policies/privacy',
+  '/policies/tos',
+  '/terms-of-service',
+  '/privacy-policy',
+  '/terms-and-conditions',
+  '/legal/terms',
+  '/legal/privacy',
+  '/tos',
+  '/pages/terms-of-service',
+  '/pages/privacy-policy',
+  '/pages/terms-and-conditions',
+  '/pages/contact-us',
+  '/pages/about-us',
+  '/pages/contact',
+  '/pages/about',
+  '/pages/legal',
+  '/pages/imprint',
+  '/page/terms-of-service',
+  '/page/privacy-policy',
+  '/page/contact',
+  '/page/about',
+  '/checkout',
+  '/cart',
+  '/checkouts',
+  '/account',
+  '/account/login',
+  '/account/register',
+  '/pages/faq',
+  '/pages/faqs',
+  '/pages/shipping',
+  '/pages/returns',
+  '/pages/warranty',
+  '/pages/size-guide',
+  '/pages/track-order',
+  '/pages/order-tracking',
+  '/collections',
+  '/products',
+  '/apps/helpdesk',
+  '/apps/help-center',
+  '/apps/contact-form',
+];
+
 const PRIORITY_CONTACT_PATHS = [
+  ...CRITICAL_POLICY_PATHS,
   '/contact',
   '/contact-us',
   '/contactus',
@@ -108,22 +159,11 @@ const PRIORITY_CONTACT_PATHS = [
   '/en/terms',
   '/us/contact',
   '/us/about',
-  // Shopify-specific policy paths (critical for Shopify stores)
-  '/policies/terms-of-service',
-  '/policies/privacy-policy',
-  '/policies/refund-policy',
-  '/policies/shipping-policy',
-  '/policies/contact-information',
-  '/policies/legal-notice',
-  '/policies/terms',
-  '/policies/privacy',
-  '/policies/tos',
-  // WooCommerce and other e-commerce platforms
+  // WooCommerce and other e-commerce platforms (not in CRITICAL_POLICY_PATHS)
   '/shop/terms-and-conditions',
   '/shop/privacy-policy',
   '/store/terms',
   '/store/privacy',
-  // Additional common variations
   '/policy/terms',
   '/policy/privacy',
   '/policy/tos',
@@ -236,7 +276,37 @@ async function getBrowser() {
 
 type DeviceMode = 'desktop' | 'mobile';
 
-async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop'): Promise<string | null> {
+function isPolicyPage(url: string): boolean {
+  const lowerUrl = url.toLowerCase();
+  const policyKeywords = [
+    'policies', 'policy', 'terms', 'privacy', 'legal', 'tos', 
+    'terms-of-service', 'privacy-policy', 'refund', 'shipping',
+    'conditions', 'disclaimer', 'imprint', 'impressum'
+  ];
+  return policyKeywords.some(keyword => lowerUrl.includes(keyword));
+}
+
+function isShopifyOrEcommerce(html: string): boolean {
+  const shopifyIndicators = [
+    'cdn.shopify.com',
+    'shopify.com',
+    'Shopify.theme',
+    'shopify-section',
+    'ShopifyAnalytics',
+    'myshopify.com',
+    'woocommerce',
+    'WooCommerce',
+    'bigcommerce',
+    'BigCommerce',
+    'magento',
+    'Magento',
+    'prestashop',
+    'opencart'
+  ];
+  return shopifyIndicators.some(indicator => html.includes(indicator));
+}
+
+async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false): Promise<string | null> {
   let page: any = null;
   try {
     const browser = await getBrowser();
@@ -265,15 +335,52 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
     
     await new Promise(resolve => setTimeout(resolve, waitTime));
     
-    await page.evaluate(() => {
-      window.scrollTo(0, document.body.scrollHeight);
-    });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    await page.evaluate(() => {
-      window.scrollTo(0, 0);
-    });
-    await new Promise(resolve => setTimeout(resolve, 500));
+    if (fullScroll || isPolicyPage(url)) {
+      await page.evaluate(async () => {
+        const scrollStep = 400;
+        const scrollDelay = 80;
+        const maxScrolls = 20;
+        let scrollCount = 0;
+        let lastHeight = 0;
+        let stableCount = 0;
+        
+        while (scrollCount < maxScrolls && stableCount < 2) {
+          const currentHeight = document.body.scrollHeight;
+          if (currentHeight === lastHeight) {
+            stableCount++;
+          } else {
+            stableCount = 0;
+            lastHeight = currentHeight;
+          }
+          
+          window.scrollBy(0, scrollStep);
+          await new Promise(r => setTimeout(r, scrollDelay));
+          
+          if (window.scrollY + window.innerHeight >= document.body.scrollHeight) {
+            break;
+          }
+          scrollCount++;
+        }
+        
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } else {
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
     
     const html = await page.content();
     return html;
@@ -290,8 +397,9 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
 }
 
 async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Promise<{ html: string | null; mobileHtml: string | null; emails: Set<string>; usedMobile: boolean }> {
-  console.log(`[EmailExtractor] Fetching with desktop viewport: ${url}`);
-  const desktopHtml = await fetchPageWithBrowser(url, waitTime, 'desktop');
+  const shouldFullScroll = isPolicyPage(url);
+  console.log(`[EmailExtractor] Fetching with desktop viewport: ${url}${shouldFullScroll ? ' (full scroll for policy page)' : ''}`);
+  const desktopHtml = await fetchPageWithBrowser(url, waitTime, 'desktop', shouldFullScroll);
   
   let allEmails = new Set<string>();
   let usedMobile = false;
@@ -304,7 +412,7 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
     
     if (desktopEmails.size < 2) {
       console.log(`[EmailExtractor] Few emails found on desktop, trying mobile viewport...`);
-      const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile');
+      const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile', shouldFullScroll);
       
       if (mobileHtml) {
         mobileHtmlResult = mobileHtml;
@@ -323,7 +431,7 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
     }
   } else {
     console.log(`[EmailExtractor] Desktop fetch failed, trying mobile as fallback...`);
-    const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile');
+    const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile', shouldFullScroll);
     
     if (mobileHtml) {
       mobileHtmlResult = mobileHtml;
@@ -843,6 +951,13 @@ function isValidEmail(email: string): boolean {
   
   if (domain.startsWith('.') || domain.endsWith('.')) return false;
   
+  const commonEmailDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'mail.com', 'protonmail.com', 'live.com', 'msn.com', 'ymail.com'];
+  for (const commonDomain of commonEmailDomains) {
+    if (domain.includes(commonDomain) && domain !== commonDomain) {
+      return false;
+    }
+  }
+  
   return true;
 }
 
@@ -1184,7 +1299,51 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       methodsUsed.push('ai_analysis');
     }
     
-    console.log(`[EmailExtractor] Step 2: Scanning all priority contact paths...`);
+    const isEcommerceSite = isShopifyOrEcommerce(rootHtml);
+    if (isEcommerceSite) {
+      console.log(`[EmailExtractor] Detected e-commerce/Shopify site - will use aggressive scanning for policy pages`);
+      methodsUsed.push('ecommerce_detection');
+    }
+    
+    console.log(`[EmailExtractor] Step 2: Scanning critical policy pages first (Terms of Service, Privacy Policy, etc.)...`);
+    const criticalPolicyUrls: string[] = [];
+    for (const path of CRITICAL_POLICY_PATHS) {
+      criticalPolicyUrls.push(`${baseUrl}${path}`);
+    }
+    
+    const policyScannedUrls = new Set<string>();
+    for (const policyUrl of criticalPolicyUrls.slice(0, 20)) {
+      if (policyScannedUrls.has(policyUrl)) continue;
+      policyScannedUrls.add(policyUrl);
+      
+      try {
+        console.log(`[EmailExtractor] Scanning critical policy page: ${policyUrl}`);
+        const html = await fetchPageWithBrowser(policyUrl, 4000, 'desktop', true);
+        
+        if (html) {
+          const emails = extractEmailsFromHtml(html);
+          if (emails.size > 0) {
+            console.log(`[EmailExtractor] Found ${emails.size} emails in policy page: ${policyUrl}`);
+            emails.forEach(e => allEmails.add(e));
+          } else {
+            const pageText = cheerio.load(html)('body').text();
+            combinedTextForAI += '\n\n--- Policy Page: ' + policyUrl + ' ---\n' + pageText;
+            const aiEmails = await analyzeWithAI(pageText, domain);
+            aiEmails.forEach(e => allEmails.add(e));
+            if (aiEmails.size > 0) {
+              console.log(`[EmailExtractor] AI found ${aiEmails.size} emails in policy page: ${policyUrl}`);
+            }
+          }
+          pagesScanned++;
+        }
+      } catch (err: any) {
+        console.log(`[EmailExtractor] Failed to scan policy page ${policyUrl}: ${err.message}`);
+      }
+    }
+    
+    console.log(`[EmailExtractor] After policy pages: found ${allEmails.size} emails so far`);
+    
+    console.log(`[EmailExtractor] Step 3: Scanning other priority contact paths...`);
     const allPriorityUrls: string[] = [];
     for (const path of PRIORITY_CONTACT_PATHS) {
       allPriorityUrls.push(`${baseUrl}${path}`);
@@ -1196,21 +1355,24 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     
     const uniqueContactUrls = new Set<string>();
     for (const url of allPriorityUrls) {
-      uniqueContactUrls.add(url);
+      if (!policyScannedUrls.has(url)) {
+        uniqueContactUrls.add(url);
+      }
     }
     for (const url of contactLinks) {
-      uniqueContactUrls.add(url);
+      if (!policyScannedUrls.has(url)) {
+        uniqueContactUrls.add(url);
+      }
     }
-    // Exclude URLs we've already scanned
     uniqueContactUrls.delete(rootUrl);
     uniqueContactUrls.delete(baseUrl);
     if (isUserUrlDifferentFromRoot) {
       uniqueContactUrls.delete(userProvidedUrl);
     }
     
-    console.log(`[EmailExtractor] Found ${uniqueContactUrls.size} unique contact/priority pages to scan`);
+    console.log(`[EmailExtractor] Found ${uniqueContactUrls.size} additional contact/priority pages to scan`);
     
-    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 35);
+    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 25);
     
     const scanPromises = urlsToScan.map(async (link) => {
       try {
@@ -1218,7 +1380,9 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
         let mobileHtml: string | null = null;
         let emails = new Set<string>();
         
-        if (usedBrowser) {
+        const shouldUseBrowser = usedBrowser || isEcommerceSite || isPolicyPage(link);
+        
+        if (shouldUseBrowser) {
           const result = await fetchWithMobileFallback(link, 3000);
           html = result.html;
           mobileHtml = result.mobileHtml;
@@ -1236,7 +1400,6 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
           }
         }
         
-        // If no emails found, try AI analysis with both desktop and mobile content
         if (html && emails.size === 0) {
           let pageText = cheerio.load(html)('body').text();
           if (mobileHtml) {
