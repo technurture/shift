@@ -60,7 +60,20 @@ const PRIORITY_CONTACT_PATHS = [
   '/partners',
   '/sp-contact',
   '/sp-about_us',
+  '/login',
+  '/signin',
+  '/sign-in',
+  '/signup',
+  '/sign-up',
+  '/register',
+  '/authentication',
+  '/auth',
 ];
+
+const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const MOBILE_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+const DESKTOP_VIEWPORT = { width: 1920, height: 1080 };
+const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
 const COMMON_EMAIL_PREFIXES = [
   'info',
@@ -159,14 +172,19 @@ async function getBrowser() {
   return browserInstance;
 }
 
-async function fetchPageWithBrowser(url: string, waitTime: number = 3000): Promise<string | null> {
+type DeviceMode = 'desktop' | 'mobile';
+
+async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop'): Promise<string | null> {
   let page: any = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
     
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await page.setViewport({ width: 1920, height: 1080 });
+    const userAgent = mode === 'mobile' ? MOBILE_USER_AGENT : DESKTOP_USER_AGENT;
+    const viewport = mode === 'mobile' ? MOBILE_VIEWPORT : DESKTOP_VIEWPORT;
+    
+    await page.setUserAgent(userAgent);
+    await page.setViewport(viewport);
     
     await page.setRequestInterception(true);
     page.on('request', (req: any) => {
@@ -198,7 +216,7 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000): Promi
     const html = await page.content();
     return html;
   } catch (error: any) {
-    console.error(`[EmailExtractor] Browser fetch failed for ${url}:`, error.message);
+    console.error(`[EmailExtractor] Browser fetch (${mode}) failed for ${url}:`, error.message);
     return null;
   } finally {
     if (page) {
@@ -207,6 +225,54 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000): Promi
       } catch {}
     }
   }
+}
+
+async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Promise<{ html: string | null; mobileHtml: string | null; emails: Set<string>; usedMobile: boolean }> {
+  console.log(`[EmailExtractor] Fetching with desktop viewport: ${url}`);
+  const desktopHtml = await fetchPageWithBrowser(url, waitTime, 'desktop');
+  
+  let allEmails = new Set<string>();
+  let usedMobile = false;
+  let mobileHtmlResult: string | null = null;
+  
+  if (desktopHtml) {
+    const desktopEmails = extractEmailsFromHtml(desktopHtml);
+    desktopEmails.forEach(e => allEmails.add(e));
+    console.log(`[EmailExtractor] Desktop extraction found ${desktopEmails.size} emails`);
+    
+    if (desktopEmails.size < 2) {
+      console.log(`[EmailExtractor] Few emails found on desktop, trying mobile viewport...`);
+      const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile');
+      
+      if (mobileHtml) {
+        mobileHtmlResult = mobileHtml;
+        const mobileEmails = extractEmailsFromHtml(mobileHtml);
+        const beforeCount = allEmails.size;
+        mobileEmails.forEach(e => allEmails.add(e));
+        const newFromMobile = allEmails.size - beforeCount;
+        
+        if (newFromMobile > 0) {
+          console.log(`[EmailExtractor] Mobile extraction found ${newFromMobile} additional emails`);
+          usedMobile = true;
+        }
+        
+        return { html: desktopHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile };
+      }
+    }
+  } else {
+    console.log(`[EmailExtractor] Desktop fetch failed, trying mobile as fallback...`);
+    const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile');
+    
+    if (mobileHtml) {
+      mobileHtmlResult = mobileHtml;
+      const mobileEmails = extractEmailsFromHtml(mobileHtml);
+      mobileEmails.forEach(e => allEmails.add(e));
+      usedMobile = true;
+      return { html: mobileHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile };
+    }
+  }
+  
+  return { html: desktopHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile };
 }
 
 async function fetchPageSimple(url: string): Promise<string | null> {
@@ -863,45 +929,115 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     const fullUrl = url.startsWith('http') ? url : `https://${url}`;
     const baseUrlObj = new URL(fullUrl);
     const baseUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
+    const rootUrl = `${baseUrl}/`;
     const domain = baseUrlObj.host.replace('www.', '');
     const brandName = getBrandName(domain);
+    const providedPath = baseUrlObj.pathname;
+    const userProvidedUrl = fullUrl.split('?')[0].split('#')[0];
+    const isUserUrlDifferentFromRoot = userProvidedUrl !== rootUrl && userProvidedUrl !== baseUrl && providedPath !== '/';
     
     const allEmails = new Set<string>();
     const methodsUsed: string[] = [];
     let pagesScanned = 0;
+    let usedBrowser = false;
+    let usedMobileFallback = false;
+    let combinedTextForAI = '';
     
     console.log(`[EmailExtractor] Starting enhanced extraction for: ${fullUrl}`);
-    console.log(`[EmailExtractor] Domain: ${domain}, Brand: ${brandName}`);
+    console.log(`[EmailExtractor] Base URL: ${baseUrl}, Domain: ${domain}, Brand: ${brandName}`);
+    console.log(`[EmailExtractor] User provided path: ${providedPath}, different from root: ${isUserUrlDifferentFromRoot}`);
     
-    let mainHtml = await fetchPageSimple(fullUrl);
-    let usedBrowser = false;
-    
-    if (mainHtml) {
-      const initialEmails = extractEmailsFromHtml(mainHtml);
+    // Step 1: ALWAYS scan the user's exact URL first (if different from root)
+    if (isUserUrlDifferentFromRoot) {
+      console.log(`[EmailExtractor] Step 1a: Scanning user's exact URL first: ${userProvidedUrl}`);
+      let userUrlHtml = await fetchPageSimple(userProvidedUrl);
       
-      const isJsRendered = mainHtml.includes('id="root"') || 
-                           mainHtml.includes('id="app"') || 
-                           mainHtml.includes('id="__next"') ||
-                           mainHtml.includes('id="__nuxt"') ||
-                           mainHtml.includes('ng-version') ||
-                           (mainHtml.length < 5000 && initialEmails.size === 0);
-      
-      if (isJsRendered || initialEmails.size === 0) {
-        console.log(`[EmailExtractor] Detected JavaScript-rendered page or no initial emails, using browser...`);
-        const browserHtml = await fetchPageWithBrowser(fullUrl, 4000);
-        if (browserHtml) {
-          mainHtml = browserHtml;
+      if (userUrlHtml) {
+        const initialEmails = extractEmailsFromHtml(userUrlHtml);
+        
+        const isJsRendered = userUrlHtml.includes('id="root"') || 
+                             userUrlHtml.includes('id="app"') || 
+                             userUrlHtml.includes('id="__next"') ||
+                             userUrlHtml.includes('id="__nuxt"') ||
+                             userUrlHtml.includes('ng-version') ||
+                             (userUrlHtml.length < 5000 && initialEmails.size === 0);
+        
+        if (isJsRendered || initialEmails.size === 0) {
+          console.log(`[EmailExtractor] User URL appears JS-rendered, using browser with mobile fallback...`);
+          const browserResult = await fetchWithMobileFallback(userProvidedUrl, 4000);
+          if (browserResult.html) {
+            userUrlHtml = browserResult.html;
+            browserResult.emails.forEach(e => allEmails.add(e));
+            usedBrowser = true;
+            usedMobileFallback = browserResult.usedMobile;
+            combinedTextForAI += cheerio.load(browserResult.html)('body').text() + '\n\n';
+            if (browserResult.mobileHtml && browserResult.usedMobile) {
+              combinedTextForAI += cheerio.load(browserResult.mobileHtml)('body').text() + '\n\n';
+            }
+          }
+        } else {
+          initialEmails.forEach(e => allEmails.add(e));
+          combinedTextForAI += cheerio.load(userUrlHtml)('body').text() + '\n\n';
+        }
+        pagesScanned++;
+        console.log(`[EmailExtractor] User's URL: found ${allEmails.size} emails so far`);
+      } else {
+        console.log(`[EmailExtractor] Simple fetch failed for user URL, trying browser...`);
+        const browserResult = await fetchWithMobileFallback(userProvidedUrl, 4000);
+        if (browserResult.html) {
+          userUrlHtml = browserResult.html;
+          browserResult.emails.forEach(e => allEmails.add(e));
           usedBrowser = true;
+          usedMobileFallback = browserResult.usedMobile;
+          pagesScanned++;
+          combinedTextForAI += cheerio.load(browserResult.html)('body').text() + '\n\n';
+          if (browserResult.mobileHtml && browserResult.usedMobile) {
+            combinedTextForAI += cheerio.load(browserResult.mobileHtml)('body').text() + '\n\n';
+          }
         }
       }
-    } else {
-      console.log(`[EmailExtractor] Simple fetch failed, trying browser...`);
-      mainHtml = await fetchPageWithBrowser(fullUrl, 4000);
-      usedBrowser = true;
     }
     
-    if (!mainHtml) {
-      console.log(`[EmailExtractor] All fetch methods failed`);
+    // Step 1b: Scan root page
+    console.log(`[EmailExtractor] Step 1b: Scanning root page (/)...`);
+    let rootHtml = await fetchPageSimple(rootUrl);
+    let rootMobileHtml: string | null = null;
+    
+    if (rootHtml) {
+      const initialEmails = extractEmailsFromHtml(rootHtml);
+      
+      const isJsRendered = rootHtml.includes('id="root"') || 
+                           rootHtml.includes('id="app"') || 
+                           rootHtml.includes('id="__next"') ||
+                           rootHtml.includes('id="__nuxt"') ||
+                           rootHtml.includes('ng-version') ||
+                           (rootHtml.length < 5000 && initialEmails.size === 0);
+      
+      if (isJsRendered || initialEmails.size === 0) {
+        console.log(`[EmailExtractor] Detected JavaScript-rendered page or no initial emails, using browser with mobile fallback...`);
+        const browserResult = await fetchWithMobileFallback(rootUrl, 4000);
+        if (browserResult.html) {
+          rootHtml = browserResult.html;
+          rootMobileHtml = browserResult.mobileHtml;
+          browserResult.emails.forEach(e => allEmails.add(e));
+          usedBrowser = true;
+          usedMobileFallback = browserResult.usedMobile;
+        }
+      } else {
+        initialEmails.forEach(e => allEmails.add(e));
+      }
+    } else {
+      console.log(`[EmailExtractor] Simple fetch failed, trying browser with mobile fallback...`);
+      const browserResult = await fetchWithMobileFallback(rootUrl, 4000);
+      rootHtml = browserResult.html;
+      rootMobileHtml = browserResult.mobileHtml;
+      browserResult.emails.forEach(e => allEmails.add(e));
+      usedBrowser = true;
+      usedMobileFallback = browserResult.usedMobile;
+    }
+    
+    if (!rootHtml) {
+      console.log(`[EmailExtractor] All fetch methods failed for root`);
       return {
         emails: [],
         pagesScanned: 0,
@@ -911,49 +1047,91 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     }
     
     pagesScanned++;
-    const mainEmails = extractEmailsFromHtml(mainHtml);
-    mainEmails.forEach(email => allEmails.add(email));
-    console.log(`[EmailExtractor] Main page: found ${mainEmails.size} emails`);
+    console.log(`[EmailExtractor] Root page: found ${allEmails.size} emails so far`);
     methodsUsed.push('html_scraping');
+    if (usedMobileFallback) {
+      methodsUsed.push('mobile_fallback');
+    }
     
-    const textContent = cheerio.load(mainHtml)('body').text();
-    const aiEmails = await analyzeWithAI(textContent, domain);
+    // Build combined text for AI analysis (include both desktop and mobile if available)
+    combinedTextForAI += cheerio.load(rootHtml)('body').text() + '\n\n';
+    if (rootMobileHtml && usedMobileFallback) {
+      combinedTextForAI += cheerio.load(rootMobileHtml)('body').text() + '\n\n';
+    }
+    
+    // Run AI analysis on combined text (desktop + mobile content)
+    const aiEmails = await analyzeWithAI(combinedTextForAI, domain);
     aiEmails.forEach(email => allEmails.add(email));
     if (aiEmails.size > 0) {
       methodsUsed.push('ai_analysis');
     }
     
-    const pageLinks = extractLinksFromHtml(mainHtml, baseUrl);
+    console.log(`[EmailExtractor] Step 2: Scanning all priority contact paths...`);
+    const allPriorityUrls: string[] = [];
+    for (const path of PRIORITY_CONTACT_PATHS) {
+      allPriorityUrls.push(`${baseUrl}${path}`);
+    }
+    
+    const pageLinks = extractLinksFromHtml(rootHtml, baseUrl);
     const sitemapUrls = await fetchSitemap(baseUrl);
     const contactLinks = findContactLinks([...pageLinks, ...sitemapUrls], baseUrl);
     
-    console.log(`[EmailExtractor] Found ${contactLinks.length} priority contact pages to scan`);
+    const uniqueContactUrls = new Set<string>();
+    for (const url of allPriorityUrls) {
+      uniqueContactUrls.add(url);
+    }
+    for (const url of contactLinks) {
+      uniqueContactUrls.add(url);
+    }
+    // Exclude URLs we've already scanned
+    uniqueContactUrls.delete(rootUrl);
+    uniqueContactUrls.delete(baseUrl);
+    if (isUserUrlDifferentFromRoot) {
+      uniqueContactUrls.delete(userProvidedUrl);
+    }
     
-    const scanPromises = contactLinks.slice(0, 12).map(async (link) => {
+    console.log(`[EmailExtractor] Found ${uniqueContactUrls.size} unique contact/priority pages to scan`);
+    
+    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 15);
+    
+    const scanPromises = urlsToScan.map(async (link) => {
       try {
         let html: string | null;
+        let mobileHtml: string | null = null;
+        let emails = new Set<string>();
+        
         if (usedBrowser) {
-          html = await fetchPageWithBrowser(link, 3000);
+          const result = await fetchWithMobileFallback(link, 3000);
+          html = result.html;
+          mobileHtml = result.mobileHtml;
+          result.emails.forEach(e => emails.add(e));
         } else {
           html = await fetchPageSimple(link);
-          if (!html) {
-            html = await fetchPageWithBrowser(link, 3000);
+          if (html) {
+            emails = extractEmailsFromHtml(html);
+          }
+          if (!html || emails.size === 0) {
+            const browserResult = await fetchWithMobileFallback(link, 3000);
+            html = browserResult.html;
+            mobileHtml = browserResult.mobileHtml;
+            browserResult.emails.forEach(e => emails.add(e));
           }
         }
         
-        if (html) {
-          const emails = extractEmailsFromHtml(html);
-          
-          if (emails.size === 0) {
-            const pageText = cheerio.load(html)('body').text();
-            const aiPageEmails = await analyzeWithAI(pageText, domain);
-            aiPageEmails.forEach(e => emails.add(e));
+        // If no emails found, try AI analysis with both desktop and mobile content
+        if (html && emails.size === 0) {
+          let pageText = cheerio.load(html)('body').text();
+          if (mobileHtml) {
+            pageText += '\n\n' + cheerio.load(mobileHtml)('body').text();
           }
-          
-          console.log(`[EmailExtractor] ${link}: found ${emails.size} emails`);
-          return { link, emails: Array.from(emails), success: true };
+          const aiPageEmails = await analyzeWithAI(pageText, domain);
+          aiPageEmails.forEach(e => emails.add(e));
         }
-        return { link, emails: [], success: false };
+        
+        if (emails.size > 0) {
+          console.log(`[EmailExtractor] ${link}: found ${emails.size} emails`);
+        }
+        return { link, emails: Array.from(emails), success: html !== null };
       } catch (err: any) {
         console.log(`[EmailExtractor] Failed to fetch ${link}: ${err.message}`);
         return { link, emails: [], success: false };
