@@ -8,14 +8,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Check, Search, Zap, Shield, Globe, ArrowRight, Mail, Loader2, Send } from "lucide-react";
 import { motion } from "framer-motion";
-import { api } from "@/lib/api";
+import { api, type Stats } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { AdBanner } from "@/components/ads";
 import heroBg from "@assets/generated_images/abstract_data_flow_background_for_saas_hero_section.png";
 
 export default function Home() {
   const [url, setUrl] = useState("");
   const [, setLocation] = useLocation();
+  
+  const { data: stats } = useQuery<Stats>({
+    queryKey: ["stats"],
+    queryFn: () => api.getStats(),
+    retry: false,
+  });
 
   const handleExtract = (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,6 +127,19 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Ad Banner for Free Plan Users Only */}
+      {(!stats || stats.plan === "free") && (
+        <section className="py-8 px-4">
+          <div className="container mx-auto max-w-4xl">
+            <AdBanner 
+              format="auto" 
+              userPlan={stats?.plan}
+              className="mx-auto w-full"
+            />
+          </div>
+        </section>
+      )}
 
       {/* Pricing Section */}
       <section id="pricing" className="py-24 px-4">

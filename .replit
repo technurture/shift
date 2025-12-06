@@ -17,16 +17,16 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 5003
-externalPort = 3000
-
-[[ports]]
 localPort = 33485
 externalPort = 5000
 
 [[ports]]
 localPort = 37003
 externalPort = 4200
+
+[[ports]]
+localPort = 39779
+externalPort = 3000
 
 [[ports]]
 localPort = 41751
@@ -84,3 +84,4 @@ expertMode = true
 [userenv.shared]
 JWT_SECRET = "3e9345039d9b0b907e25092422e0397711f8fefb3b4b644429565f377dc4f7a8bebfdb0eef1b574c4affdb1f03a6d6d3f0aa324677a444b067454bd7285b2232"
 VITE_ADSENSE_CLIENT_ID = "ca-pub-5002797487383279"
+VITE_ADSENSE_SLOT_ID = "1425792533"
