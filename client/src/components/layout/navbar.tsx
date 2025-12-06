@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Menu, X, Home, LayoutDashboard, Settings, LogOut, ChevronDown, User as UserIcon } from "lucide-react";
 import { useState, useEffect } from "react";
-import icon from "@assets/generated_images/app_icon_for_mailsift.png";
+import icon from "@assets/generated_images/milkthelink_app_logo_icon.png";
 import { api, type User } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -58,12 +58,12 @@ export function Navbar() {
             <div className="relative w-10 h-10 overflow-hidden rounded-xl border border-white/10 group-hover:border-primary/50 transition-colors">
               <img 
                 src={icon} 
-                alt="MailSift Logo" 
+                alt="MilkTheLink Logo" 
                 className="w-full h-full object-cover"
               />
             </div>
             <span className="text-xl font-heading font-bold tracking-tight text-white group-hover:text-primary transition-colors">
-              MailSift
+              MilkTheLink
             </span>
           </Link>
 

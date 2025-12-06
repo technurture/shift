@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "MailSift - Email Extractor",
+  "name": "MilkTheLink - Email Extractor",
   "version": "1.0.0",
   "description": "Extract email addresses from any website instantly. Turn websites into leads in seconds.",
   "permissions": [

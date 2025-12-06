@@ -95,7 +95,7 @@ export default function Home() {
       <section id="features" className="py-20 bg-black/20 border-y border-white/5">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-heading font-bold text-white mb-4">Why Choose MailSift?</h2>
+            <h2 className="text-3xl md:text-4xl font-heading font-bold text-white mb-4">Why Choose MilkTheLink?</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Our advanced algorithms scan deeper and faster to find contacts others miss.
             </p>

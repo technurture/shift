@@ -1,4 +1,4 @@
-// MailSift Chrome Extension - Background Service Worker
+// MilkTheLink Chrome Extension - Background Service Worker
 
 // Update this with your production domain when deploying
 const API_BASE_URL = 'https://415e01b1-e6ef-463a-8513-1b94cf932054-00-2illqfo9cdugi.kirk.replit.dev';
@@ -6,7 +6,7 @@ const API_BASE_URL = 'https://415e01b1-e6ef-463a-8513-1b94cf932054-00-2illqfo9cd
 // Listen for installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
-    console.log('MailSift extension installed');
+    console.log('MilkTheLink extension installed');
     // Open welcome page or dashboard
     chrome.tabs.create({ url: `${API_BASE_URL}?ref=extension` });
   }
@@ -138,7 +138,7 @@ async function saveExtraction(data) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'mailsift-extract',
-    title: 'Extract emails with MailSift',
+    title: 'Extract emails with MilkTheLink',
     contexts: ['page', 'selection']
   });
 });

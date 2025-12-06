@@ -1,8 +1,8 @@
-# MailSift - Email Extraction Platform
+# MilkTheLink - Email Extraction Platform
 
 ## Overview
 
-MailSift is a web and mobile application designed to extract email addresses from websites. Users paste a URL, and the application scrapes and returns valid email addresses found on that page. The platform includes user authentication, tiered subscription plans with usage limits, and a modern, user-friendly interface built with React and Express.
+MilkTheLink is a web and mobile application designed to extract email addresses from websites. Users paste a URL, and the application scrapes and returns valid email addresses found on that page. The platform includes user authentication, tiered subscription plans with usage limits, and a modern, user-friendly interface built with React and Express.
 
 ## Recent Changes (December 2025)
 
@@ -144,7 +144,7 @@ The application supports two **strictly separated** authentication mechanisms to
 This separation prevents session hijacking from escalating to long-lived JWT access, as JWTs can only be obtained through explicit mobile authentication flows that require credentials.
 
 **Test Account:**
-- Email: test@mailsift.com
+- Email: test@milkthelink.com
 - Password: test123
 - Plan: free
 

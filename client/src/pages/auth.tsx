@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import icon from "@assets/generated_images/app_icon_for_mailsift.png";
+import icon from "@assets/generated_images/milkthelink_app_logo_icon.png";
 import { Loader2, ArrowLeft, Mail, KeyRound, CheckCircle, Eye, EyeOff } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -287,10 +287,10 @@ export default function AuthPage() {
       <div className="mb-8 flex flex-col items-center z-10">
         <Link href="/">
           <div className="w-16 h-16 rounded-2xl overflow-hidden mb-4 shadow-2xl border border-white/10 cursor-pointer hover:scale-105 transition-transform">
-            <img src={icon} alt="MailSift" className="w-full h-full object-cover" />
+            <img src={icon} alt="MilkTheLink" className="w-full h-full object-cover" />
           </div>
         </Link>
-        <h1 className="text-2xl font-heading font-bold text-white">Welcome to MailSift</h1>
+        <h1 className="text-2xl font-heading font-bold text-white">Welcome to MilkTheLink</h1>
         <p className="text-muted-foreground mt-2">The intelligent email extraction platform.</p>
       </div>
 

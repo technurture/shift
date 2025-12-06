@@ -1,4 +1,4 @@
-// MailSift Chrome Extension - Content Script
+// MilkTheLink Chrome Extension - Content Script
 // This script runs on all web pages to enable email extraction
 
 (function() {
@@ -105,6 +105,6 @@
   }
   
   // Quick extract function that can be called from popup
-  window.mailsiftExtract = extractEmailsFromPage;
+  window.milkthelinkExtract = extractEmailsFromPage;
   
 })();

@@ -1,14 +1,14 @@
-# MailSift Chrome Extension
+# MilkTheLink Chrome Extension
 
-Extract email addresses from any website instantly with the MailSift Chrome Extension.
+Extract email addresses from any website instantly with the MilkTheLink Chrome Extension.
 
 ## Features
 
 - **One-Click Extraction**: Extract emails from any webpage with a single click
 - **Smart Detection**: Finds emails in text, mailto links, data attributes, JSON-LD structured data, and Cloudflare-protected emails
 - **Encoded Email Detection**: Detects obfuscated emails using patterns like [at] or (at)
-- **Copy & Save**: Copy emails to clipboard or save to your MailSift account
-- **Account Sync**: Syncs with your MailSift account for unlimited access
+- **Copy & Save**: Copy emails to clipboard or save to your MilkTheLink account
+- **Account Sync**: Syncs with your MilkTheLink account for unlimited access
 - **Privacy Focused**: Only extracts emails when you click - no background tracking
 - **Context Menu**: Right-click to quickly extract emails from any page
 
@@ -54,11 +54,11 @@ const API_BASE_URL = 'https://your-domain.com';
 ## Usage
 
 1. Navigate to any website
-2. Click the MailSift extension icon
+2. Click the MilkTheLink extension icon
 3. Click "Extract Emails from This Page"
 4. View, copy, or save the extracted emails
 
-Alternatively, right-click on any page and select "Extract emails with MailSift".
+Alternatively, right-click on any page and select "Extract emails with MilkTheLink".
 
 ## Permissions Explained
 
@@ -69,4 +69,4 @@ Alternatively, right-click on any page and select "Extract emails with MailSift"
 
 ## Support
 
-For support, visit the MailSift dashboard or contact support@mailsift.com
+For support, visit the MilkTheLink dashboard or contact support@milkthelink.com

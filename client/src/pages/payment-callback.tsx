@@ -6,7 +6,7 @@ import { Loader2, CheckCircle2, XCircle, Crown } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import icon from "@assets/generated_images/app_icon_for_mailsift.png";
+import icon from "@assets/generated_images/milkthelink_app_logo_icon.png";
 
 type PaymentStatus = "verifying" | "success" | "failed";
 
@@ -65,7 +65,7 @@ export default function PaymentCallback() {
       <div className="mb-8 flex flex-col items-center z-10">
         <Link href="/">
           <div className="w-16 h-16 rounded-2xl overflow-hidden mb-4 shadow-2xl border border-white/10 cursor-pointer hover:scale-105 transition-transform">
-            <img src={icon} alt="MailSift" className="w-full h-full object-cover" />
+            <img src={icon} alt="MilkTheLink" className="w-full h-full object-cover" />
           </div>
         </Link>
       </div>

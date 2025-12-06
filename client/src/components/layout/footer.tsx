@@ -4,7 +4,7 @@ export function Footer() {
       <div className="container mx-auto px-4 text-center md:text-left">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
           <div className="col-span-1 md:col-span-2">
-            <h3 className="text-xl font-heading font-bold text-white mb-4">MailSift</h3>
+            <h3 className="text-xl font-heading font-bold text-white mb-4">MilkTheLink</h3>
             <p className="text-muted-foreground max-w-xs mx-auto md:mx-0">
               The most advanced email extraction tool for sales teams, marketers, and recruiters.
             </p>
@@ -27,7 +27,7 @@ export function Footer() {
           </div>
         </div>
         <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-          <p>&copy; 2025 MailSift Inc. All rights reserved.</p>
+          <p>&copy; 2025 MilkTheLink Inc. All rights reserved.</p>
           <div className="flex gap-6">
             <span>Made with ❤️ for Growth</span>
           </div>

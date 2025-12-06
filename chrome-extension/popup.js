@@ -1,4 +1,4 @@
-// MailSift Chrome Extension - Popup Script
+// MilkTheLink Chrome Extension - Popup Script
 
 // Update this with your production domain when deploying
 const API_BASE_URL = window.location.hostname === 'localhost' 
