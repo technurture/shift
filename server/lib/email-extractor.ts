@@ -108,6 +108,28 @@ const PRIORITY_CONTACT_PATHS = [
   '/en/terms',
   '/us/contact',
   '/us/about',
+  // Shopify-specific policy paths (critical for Shopify stores)
+  '/policies/terms-of-service',
+  '/policies/privacy-policy',
+  '/policies/refund-policy',
+  '/policies/shipping-policy',
+  '/policies/contact-information',
+  '/policies/legal-notice',
+  '/policies/terms',
+  '/policies/privacy',
+  '/policies/tos',
+  // WooCommerce and other e-commerce platforms
+  '/shop/terms-and-conditions',
+  '/shop/privacy-policy',
+  '/store/terms',
+  '/store/privacy',
+  // Additional common variations
+  '/policy/terms',
+  '/policy/privacy',
+  '/policy/tos',
+  '/info/contact',
+  '/info/about',
+  '/info/terms',
 ];
 
 const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -909,8 +931,8 @@ function findContactLinks(links: string[], baseUrl: string): string[] {
   const baseUrlObj = new URL(baseUrl);
   const addedPaths = new Set<string>();
   
-  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us', 'sp-contact', 'sp-about', 'email', 'write-to-us'];
-  const mediumPriorityKeywords = ['team', 'company', 'legal', 'privacy', 'terms', 'tos', 'faq', 'info', 'careers', 'footer', 'service', 'imprint', 'impressum', 'disclaimer', 'conditions'];
+  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us', 'sp-contact', 'sp-about', 'email', 'write-to-us', 'policies', 'policy'];
+  const mediumPriorityKeywords = ['team', 'company', 'legal', 'privacy', 'terms', 'tos', 'faq', 'info', 'careers', 'footer', 'service', 'imprint', 'impressum', 'disclaimer', 'conditions', 'refund', 'shipping'];
   const lowPriorityKeywords = ['press', 'media', 'partners', 'investors', 'newsroom', 'blog', 'news', 'join'];
   
   const productKeywords = ['product/', 'item/', 'shop/', 'buy/', 'cart', 'checkout', 'category/', 'categories/', 'search?', 'filter?', 'price=', '/sale/', '/deal/', '/offer/', '/store/', '/collections/', 'sku=', 'ref=', 'add-to-', 'wishlist', '/p/', '/pd/'];
