@@ -107,7 +107,7 @@ let browserInstance: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
 let bedrockClient: BedrockRuntimeClient | null = null;
 
 function getBedrockClient(): BedrockRuntimeClient | null {
-  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+  if (!process.env.ACCESS_KEY_ID || !process.env.SECRET_ACCESS_KEY) {
     return null;
   }
   
@@ -115,8 +115,8 @@ function getBedrockClient(): BedrockRuntimeClient | null {
     bedrockClient = new BedrockRuntimeClient({
       region: process.env.AWS_REGION || 'us-east-1',
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        accessKeyId: process.env.ACCESS_KEY_ID,
+        secretAccessKey: process.env.SECRET_ACCESS_KEY,
       },
     });
   }
