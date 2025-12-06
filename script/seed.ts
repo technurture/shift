@@ -7,13 +7,13 @@ async function seedTestUser() {
   try {
     await connectToDatabase();
     
-    const testEmail = "test@milkthelink.com";
+    const testEmail = "test@mailsift.com";
     const testPassword = "test123";
     
     const existingUser = await storage.getUserByEmail(testEmail);
     if (existingUser) {
       console.log("Test user already exists:");
-      console.log("  Email: test@milkthelink.com");
+      console.log("  Email: test@mailsift.com");
       console.log("  Password: test123");
       process.exit(0);
       return;
