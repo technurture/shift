@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { X } from "lucide-react";
 
 interface AdBannerProps {
-  slot: string;
+  slot?: string;
   format?: "auto" | "rectangle" | "horizontal" | "vertical";
   className?: string;
   userPlan?: string;
@@ -15,7 +15,9 @@ declare global {
   }
 }
 
-export function AdBanner({ slot, format = "auto", className = "", userPlan }: AdBannerProps) {
+const DEFAULT_AD_SLOT = import.meta.env.VITE_ADSENSE_SLOT_ID || "1425792533";
+
+export function AdBanner({ slot = DEFAULT_AD_SLOT, format = "auto", className = "", userPlan }: AdBannerProps) {
   const adRef = useRef<HTMLModElement>(null);
   const isAdLoaded = useRef(false);
 
