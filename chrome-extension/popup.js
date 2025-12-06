@@ -161,6 +161,7 @@ async function extractEmails() {
 // Function injected into the page to extract emails
 function extractEmailsFromPage() {
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const emailValidationRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   const emails = new Set();
   
   // Get all text content
@@ -174,7 +175,7 @@ function extractEmailsFromPage() {
     const href = link.getAttribute('href');
     if (href) {
       const email = href.replace('mailto:', '').split('?')[0].toLowerCase();
-      if (emailRegex.test(email)) {
+      if (emailValidationRegex.test(email)) {
         emails.add(email);
       }
     }
@@ -184,7 +185,7 @@ function extractEmailsFromPage() {
   const allElements = document.querySelectorAll('[data-email], [data-mail]');
   allElements.forEach(el => {
     const dataEmail = el.getAttribute('data-email') || el.getAttribute('data-mail');
-    if (dataEmail && emailRegex.test(dataEmail)) {
+    if (dataEmail && emailValidationRegex.test(dataEmail)) {
       emails.add(dataEmail.toLowerCase());
     }
   });
@@ -196,7 +197,7 @@ function extractEmailsFromPage() {
     if (encoded) {
       try {
         const decoded = decodeCfEmail(encoded);
-        if (decoded && emailRegex.test(decoded)) {
+        if (decoded && emailValidationRegex.test(decoded)) {
           emails.add(decoded.toLowerCase());
         }
       } catch (e) {
@@ -240,7 +241,7 @@ function extractEmailsFromPage() {
       if (typeof value === 'string') {
         if (key.toLowerCase() === 'email' || key.toLowerCase().includes('email')) {
           const cleanEmail = value.replace('mailto:', '').toLowerCase();
-          if (emailRegex.test(cleanEmail)) {
+          if (emailValidationRegex.test(cleanEmail)) {
             emails.add(cleanEmail);
           }
         }
@@ -271,7 +272,7 @@ function extractEmailsFromPage() {
       } else if (match.length === 3) {
         email = `${match[1]}@${match[2]}`.toLowerCase();
       }
-      if (email && emailRegex.test(email)) {
+      if (email && emailValidationRegex.test(email)) {
         emails.add(email);
       }
     }

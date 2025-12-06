@@ -4,8 +4,9 @@
 (function() {
   'use strict';
   
-  // Email regex pattern
+  // Email regex patterns - global for matching, non-global for validation
   const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const EMAIL_VALIDATION_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   
   // Listen for messages from the popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -31,7 +32,7 @@
       const href = link.getAttribute('href');
       if (href) {
         const email = href.replace('mailto:', '').split('?')[0].toLowerCase();
-        if (EMAIL_REGEX.test(email)) {
+        if (EMAIL_VALIDATION_REGEX.test(email)) {
           emails.add(email);
         }
       }
@@ -43,7 +44,7 @@
       const attrs = ['data-email', 'data-mail', 'data-contact'];
       attrs.forEach(attr => {
         const value = el.getAttribute(attr);
-        if (value && EMAIL_REGEX.test(value)) {
+        if (value && EMAIL_VALIDATION_REGEX.test(value)) {
           emails.add(value.toLowerCase());
         }
       });
@@ -52,7 +53,7 @@
     // 4. Extract from input fields (contact forms, etc.)
     const inputs = document.querySelectorAll('input[type="email"], input[name*="email"], input[id*="email"]');
     inputs.forEach(input => {
-      if (input.value && EMAIL_REGEX.test(input.value)) {
+      if (input.value && EMAIL_VALIDATION_REGEX.test(input.value)) {
         emails.add(input.value.toLowerCase());
       }
     });
