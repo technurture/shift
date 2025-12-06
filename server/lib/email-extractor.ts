@@ -494,7 +494,7 @@ function isShopifyOrEcommerce(html: string): boolean {
   return shopifyIndicators.some(indicator => html.includes(indicator));
 }
 
-async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false): Promise<string | null> {
+async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false, isRetry: boolean = false): Promise<string | null> {
   let page: any = null;
   try {
     const browser = await getBrowser();
@@ -521,7 +521,19 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
       timeout: 30000,
     });
     
-    await new Promise(resolve => setTimeout(resolve, waitTime));
+    // Longer wait for retries to ensure JavaScript fully loads
+    const effectiveWait = isRetry ? waitTime + 2000 : waitTime;
+    await new Promise(resolve => setTimeout(resolve, effectiveWait));
+    
+    // Wait for Shopify-specific elements to load
+    try {
+      await page.waitForFunction(() => {
+        // Check if page is fully loaded
+        return document.readyState === 'complete';
+      }, { timeout: 5000 });
+    } catch {
+      // Continue even if timeout
+    }
     
     if (fullScroll || isPolicyPage(url)) {
       await page.evaluate(async () => {
@@ -587,20 +599,40 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
 async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Promise<{ html: string | null; mobileHtml: string | null; emails: Set<string>; usedMobile: boolean }> {
   const shouldFullScroll = isPolicyPage(url);
   console.log(`[EmailExtractor] Fetching with desktop viewport: ${url}${shouldFullScroll ? ' (full scroll for policy page)' : ''}`);
-  const desktopHtml = await fetchPageWithBrowser(url, waitTime, 'desktop', shouldFullScroll);
+  
+  // Use longer wait time for e-commerce sites
+  const effectiveWaitTime = waitTime + 1000; // Add 1 second for more reliable extraction
+  
+  let desktopHtml = await fetchPageWithBrowser(url, effectiveWaitTime, 'desktop', shouldFullScroll, false);
   
   let allEmails = new Set<string>();
   let usedMobile = false;
   let mobileHtmlResult: string | null = null;
+  let isEcommerce = false;
   
   if (desktopHtml) {
+    isEcommerce = isShopifyOrEcommerce(desktopHtml);
     const desktopEmails = extractEmailsFromHtml(desktopHtml);
     desktopEmails.forEach(e => allEmails.add(e));
-    console.log(`[EmailExtractor] Desktop extraction found ${desktopEmails.size} emails`);
+    console.log(`[EmailExtractor] Desktop extraction found ${desktopEmails.size} emails${isEcommerce ? ' (e-commerce site detected)' : ''}`);
     
-    if (desktopEmails.size < 2) {
+    // Retry with longer wait if e-commerce site and no emails found
+    if (desktopEmails.size === 0 && isEcommerce) {
+      console.log(`[EmailExtractor] E-commerce site with no emails, retrying with longer wait...`);
+      const retryHtml = await fetchPageWithBrowser(url, effectiveWaitTime + 2000, 'desktop', true, true);
+      if (retryHtml) {
+        const retryEmails = extractEmailsFromHtml(retryHtml);
+        retryEmails.forEach(e => allEmails.add(e));
+        if (retryEmails.size > 0) {
+          console.log(`[EmailExtractor] Retry found ${retryEmails.size} emails`);
+          desktopHtml = retryHtml;
+        }
+      }
+    }
+    
+    if (allEmails.size < 2) {
       console.log(`[EmailExtractor] Few emails found on desktop, trying mobile viewport...`);
-      const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile', shouldFullScroll);
+      const mobileHtml = await fetchPageWithBrowser(url, effectiveWaitTime, 'mobile', shouldFullScroll, false);
       
       if (mobileHtml) {
         mobileHtmlResult = mobileHtml;
@@ -619,13 +651,29 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
     }
   } else {
     console.log(`[EmailExtractor] Desktop fetch failed, trying mobile as fallback...`);
-    const mobileHtml = await fetchPageWithBrowser(url, waitTime, 'mobile', shouldFullScroll);
+    const mobileHtml = await fetchPageWithBrowser(url, effectiveWaitTime, 'mobile', shouldFullScroll, false);
     
     if (mobileHtml) {
       mobileHtmlResult = mobileHtml;
+      isEcommerce = isShopifyOrEcommerce(mobileHtml);
       const mobileEmails = extractEmailsFromHtml(mobileHtml);
       mobileEmails.forEach(e => allEmails.add(e));
       usedMobile = true;
+      
+      // Retry mobile if e-commerce and no emails
+      if (mobileEmails.size === 0 && isEcommerce) {
+        console.log(`[EmailExtractor] E-commerce mobile with no emails, retrying...`);
+        const retryMobile = await fetchPageWithBrowser(url, effectiveWaitTime + 2000, 'mobile', true, true);
+        if (retryMobile) {
+          const retryEmails = extractEmailsFromHtml(retryMobile);
+          retryEmails.forEach(e => allEmails.add(e));
+          if (retryEmails.size > 0) {
+            console.log(`[EmailExtractor] Mobile retry found ${retryEmails.size} emails`);
+            mobileHtmlResult = retryMobile;
+          }
+        }
+      }
+      
       return { html: mobileHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile };
     }
   }
