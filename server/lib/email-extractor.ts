@@ -18,6 +18,7 @@ const PRIORITY_CONTACT_PATHS = [
   '/contact-us',
   '/contactus',
   '/contact.html',
+  '/contact.php',
   '/about/contact',
   '/about-us/contact',
   '/support',
@@ -25,39 +26,63 @@ const PRIORITY_CONTACT_PATHS = [
   '/help',
   '/help/contact',
   '/help-center',
+  '/helpcenter',
   '/customer-service',
   '/customer-support',
   '/get-in-touch',
   '/reach-us',
+  '/write-to-us',
+  '/email-us',
   '/about',
   '/about-us',
   '/aboutus',
+  '/about.html',
   '/company',
   '/company/about',
   '/team',
   '/our-team',
+  '/meet-the-team',
+  '/leadership',
+  '/management',
   '/legal',
   '/legal/terms',
   '/legal/privacy',
+  '/legal/tos',
+  '/legal/terms-of-service',
   '/privacy',
   '/privacy-policy',
+  '/privacypolicy',
   '/terms',
+  '/terms-of-service',
+  '/termsofservice',
   '/terms-and-conditions',
+  '/termsandconditions',
+  '/tos',
+  '/t-and-c',
+  '/tc',
+  '/conditions',
+  '/disclaimer',
   '/imprint',
   '/impressum',
   '/info',
   '/information',
   '/faq',
   '/faqs',
+  '/frequently-asked-questions',
   '/careers',
   '/jobs',
+  '/work-with-us',
+  '/join-us',
   '/press',
   '/media',
   '/newsroom',
+  '/news',
+  '/blog',
   '/sp-help-center',
   '/seller-center',
   '/vendor',
   '/partners',
+  '/become-a-partner',
   '/sp-contact',
   '/sp-about_us',
   '/login',
@@ -68,6 +93,21 @@ const PRIORITY_CONTACT_PATHS = [
   '/register',
   '/authentication',
   '/auth',
+  '/footer',
+  '/sitemap',
+  '/site-map',
+  '/pages/contact',
+  '/pages/about',
+  '/pages/terms',
+  '/pages/privacy',
+  '/page/contact',
+  '/page/about',
+  '/page/terms',
+  '/en/contact',
+  '/en/about',
+  '/en/terms',
+  '/us/contact',
+  '/us/about',
 ];
 
 const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -591,7 +631,7 @@ async function fetchSitemap(baseUrl: string): Promise<string[]> {
     console.log(`[EmailExtractor] Sitemap fetch failed: ${error.message}`);
   }
   
-  return contactUrls.slice(0, 10);
+  return contactUrls.slice(0, 20);
 }
 
 function extractEmailsFromHtml(html: string): Set<string> {
@@ -784,6 +824,51 @@ function isValidEmail(email: string): boolean {
   return true;
 }
 
+function extractFooterLinks(html: string, baseUrl: string): string[] {
+  const $ = cheerio.load(html);
+  const footerLinks = new Set<string>();
+  const baseUrlObj = new URL(baseUrl);
+  
+  const footerSelectors = [
+    'footer',
+    '[class*="footer"]',
+    '[id*="footer"]',
+    '[class*="bottom"]',
+    '[id*="bottom"]',
+    '[class*="legal"]',
+    '[id*="legal"]',
+    '[class*="site-info"]',
+    '[role="contentinfo"]',
+  ];
+  
+  footerSelectors.forEach(selector => {
+    $(selector).find('a[href]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (!href) return;
+      
+      try {
+        let fullUrl: string;
+        if (href.startsWith('http')) {
+          fullUrl = href;
+        } else if (href.startsWith('/')) {
+          fullUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${href}`;
+        } else if (!href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('javascript:')) {
+          fullUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}/${href}`;
+        } else {
+          return;
+        }
+        
+        const linkUrl = new URL(fullUrl);
+        if (linkUrl.host === baseUrlObj.host) {
+          footerLinks.add(linkUrl.href.split('#')[0].split('?')[0]);
+        }
+      } catch {}
+    });
+  });
+  
+  return Array.from(footerLinks);
+}
+
 function extractLinksFromHtml(html: string, baseUrl: string): string[] {
   const $ = cheerio.load(html);
   const links = new Set<string>();
@@ -812,39 +897,50 @@ function extractLinksFromHtml(html: string, baseUrl: string): string[] {
     } catch {}
   });
   
+  const footerLinks = extractFooterLinks(html, baseUrl);
+  footerLinks.forEach(link => links.add(link));
+  
   return Array.from(links);
 }
 
 function findContactLinks(links: string[], baseUrl: string): string[] {
   const contactLinks: string[] = [];
+  const otherLinks: string[] = [];
   const baseUrlObj = new URL(baseUrl);
   const addedPaths = new Set<string>();
   
-  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us', 'sp-contact', 'sp-about'];
-  const mediumPriorityKeywords = ['team', 'company', 'legal', 'privacy', 'terms', 'faq', 'info', 'careers'];
-  const lowPriorityKeywords = ['press', 'media', 'partners', 'investors', 'newsroom'];
+  const highPriorityKeywords = ['contact', 'about', 'support', 'help', 'customer-service', 'customer-care', 'get-in-touch', 'reach-us', 'sp-contact', 'sp-about', 'email', 'write-to-us'];
+  const mediumPriorityKeywords = ['team', 'company', 'legal', 'privacy', 'terms', 'tos', 'faq', 'info', 'careers', 'footer', 'service', 'imprint', 'impressum', 'disclaimer', 'conditions'];
+  const lowPriorityKeywords = ['press', 'media', 'partners', 'investors', 'newsroom', 'blog', 'news', 'join'];
   
-  const productKeywords = ['product', 'item', 'shop', 'buy', 'cart', 'checkout', 'category', 'categories', 'search', 'filter', 'price', 'sale', 'deal', 'offer', 'brand', 'store', '.html', 'mpg', 'sku', 'ref'];
+  const productKeywords = ['product/', 'item/', 'shop/', 'buy/', 'cart', 'checkout', 'category/', 'categories/', 'search?', 'filter?', 'price=', '/sale/', '/deal/', '/offer/', '/store/', '/collections/', 'sku=', 'ref=', 'add-to-', 'wishlist', '/p/', '/pd/'];
   
   for (const link of links) {
     const lowerLink = link.toLowerCase();
-    const path = new URL(link).pathname;
-    
-    if (productKeywords.some(keyword => lowerLink.includes(keyword))) {
-      continue;
-    }
-    
-    if (highPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
-      if (!addedPaths.has(path)) {
-        contactLinks.unshift(link);
-        addedPaths.add(path);
+    try {
+      const path = new URL(link).pathname;
+      
+      if (productKeywords.some(keyword => lowerLink.includes(keyword))) {
+        continue;
       }
-    } else if (mediumPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
-      if (!addedPaths.has(path)) {
-        contactLinks.push(link);
-        addedPaths.add(path);
+      
+      if (highPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
+        if (!addedPaths.has(path)) {
+          contactLinks.unshift(link);
+          addedPaths.add(path);
+        }
+      } else if (mediumPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
+        if (!addedPaths.has(path)) {
+          contactLinks.push(link);
+          addedPaths.add(path);
+        }
+      } else if (lowPriorityKeywords.some(keyword => lowerLink.includes(keyword))) {
+        if (!addedPaths.has(path)) {
+          otherLinks.push(link);
+          addedPaths.add(path);
+        }
       }
-    }
+    } catch {}
   }
   
   for (const path of PRIORITY_CONTACT_PATHS) {
@@ -855,7 +951,7 @@ function findContactLinks(links: string[], baseUrl: string): string[] {
     }
   }
   
-  return contactLinks.slice(0, 15);
+  return [...contactLinks, ...otherLinks].slice(0, 35);
 }
 
 function generateCommonEmails(domain: string): string[] {
@@ -1092,7 +1188,7 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     
     console.log(`[EmailExtractor] Found ${uniqueContactUrls.size} unique contact/priority pages to scan`);
     
-    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 15);
+    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 35);
     
     const scanPromises = urlsToScan.map(async (link) => {
       try {
