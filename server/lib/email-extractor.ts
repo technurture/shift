@@ -251,6 +251,45 @@ const PLATFORM_SIGNATURES = {
   ],
 };
 
+// Shopify-specific endpoints to check for contact info
+const SHOPIFY_API_ENDPOINTS = [
+  '/products.json',
+  '/collections.json', 
+  '/pages.json',
+  '/blogs.json',
+  '/shop.js',
+  '/cart.js',
+  '/meta.json',
+  '/?view=json',
+  '/pages/contact.json',
+  '/pages/about.json',
+];
+
+// Enhanced Shopify policy pages
+const SHOPIFY_POLICY_PAGES = [
+  '/policies/contact-information',
+  '/policies/terms-of-service',
+  '/policies/privacy-policy',
+  '/policies/refund-policy',
+  '/policies/shipping-policy',
+  '/policies/legal-notice',
+  '/pages/store-policy',
+  '/pages/store-policies',
+  '/pages/legal',
+  '/pages/contact-us',
+  '/pages/about-us',
+  '/pages/about',
+  '/pages/contact',
+  '/pages/customer-service',
+  '/pages/support',
+  '/pages/help',
+  '/pages/faq',
+  '/pages/faqs',
+  '/pages/team',
+  '/pages/our-team',
+  '/pages/our-story',
+];
+
 const PRIORITY_CONTACT_PATHS = [
   ...CRITICAL_POLICY_PATHS,
   '/contact',
@@ -879,16 +918,29 @@ async function analyzeWithAI(textContent: string, domain: string): Promise<Set<s
     
     const truncatedContent = textContent.substring(0, 15000);
     
-    const prompt = `You are an expert at finding contact information. Analyze the following website content and extract ALL email addresses you can find. Look for:
-1. Direct email addresses (e.g., support@company.com)
-2. Obfuscated emails (e.g., "support [at] company [dot] com" or "support(at)company(dot)com")
-3. Email patterns mentioned in text (e.g., "email us at support at company.com")
-4. Any contact email hints or references
+    const prompt = `You are an expert email extraction specialist analyzing e-commerce and Shopify websites. Your job is to find ALL contact email addresses from website content.
+
+CRITICAL: Look VERY carefully for:
+1. Direct email addresses (e.g., support@company.com, info@store.com)
+2. Obfuscated emails: "support [at] company [dot] com", "support(at)company(dot)com", "support AT company DOT com"
+3. Email patterns in text: "email us at support at company.com", "contact: info at domain.com"
+4. JavaScript/JSON embedded emails: "email": "contact@store.com", 'shopEmail': 'info@domain.com'
+5. Emails mentioned in policy/legal text, terms of service, privacy policy sections
+6. Store owner emails, merchant emails, notification emails mentioned anywhere
+7. Emails in footer sections, "Contact Us" references, customer service information
+8. Emails in WhatsApp/phone contact sections (often nearby)
+9. Look for email domains that match the website domain or brand name
 
 Domain being analyzed: ${domain}
+Brand name: ${domain.split('.')[0]}
 
 Website content:
 ${truncatedContent}
+
+IMPORTANT: Only include emails that are ACTUALLY present in the content above.
+- DO NOT fabricate or guess email addresses
+- Only extract emails you can directly see in the text
+- If text says "email us" without an actual email, do not invent one
 
 Respond ONLY with a JSON object in this exact format:
 {"emails": ["email1@domain.com", "email2@domain.com"], "confidence": "high/medium/low"}
@@ -925,6 +977,8 @@ If no emails found, respond with: {"emails": [], "confidence": "low"}`;
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
+          // Extract only confirmed emails found in the actual page content
+          // Do NOT use probableEmails as those are AI-fabricated guesses
           if (parsed.emails && Array.isArray(parsed.emails)) {
             parsed.emails.forEach((email: string) => {
               const cleaned = email.toLowerCase().trim();
@@ -932,6 +986,10 @@ If no emails found, respond with: {"emails": [], "confidence": "low"}`;
                 emails.add(cleaned);
               }
             });
+          }
+          // Log probable emails for debugging but do not add to results
+          if (parsed.probableEmails && Array.isArray(parsed.probableEmails) && parsed.probableEmails.length > 0) {
+            console.log(`[EmailExtractor] AI suggested probable emails (not added to results): ${parsed.probableEmails.join(', ')}`);
           }
         }
       } catch (parseError) {
@@ -948,6 +1006,124 @@ If no emails found, respond with: {"emails": [], "confidence": "low"}`;
     console.log(`[EmailExtractor] AI analysis found ${emails.size} emails`);
   } catch (error: any) {
     console.log(`[EmailExtractor] AI analysis failed: ${error.message}`);
+  }
+  
+  return emails;
+}
+
+// Extract emails from Shopify-specific sources (API endpoints, JS variables)
+async function extractFromShopifyEndpoints(baseUrl: string): Promise<Set<string>> {
+  const emails = new Set<string>();
+  console.log('[EmailExtractor] Scanning Shopify-specific endpoints...');
+  
+  for (const endpoint of SHOPIFY_API_ENDPOINTS) {
+    try {
+      const url = `${baseUrl}${endpoint}`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': DESKTOP_USER_AGENT,
+          'Accept': 'application/json, text/javascript, */*',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (response.ok) {
+        const text = await response.text();
+        
+        // Extract emails from JSON/JS content
+        const foundEmails = text.match(EMAIL_REGEX) || [];
+        foundEmails.forEach(email => {
+          const cleaned = email.toLowerCase().trim();
+          if (isValidEmail(cleaned)) {
+            emails.add(cleaned);
+            console.log(`[EmailExtractor] Found email in Shopify endpoint ${endpoint}: ${cleaned}`);
+          }
+        });
+        
+        // Look for Shopify shop settings
+        const shopEmailMatch = text.match(/"email"\s*:\s*"([^"]+@[^"]+)"/i);
+        if (shopEmailMatch && isValidEmail(shopEmailMatch[1].toLowerCase())) {
+          emails.add(shopEmailMatch[1].toLowerCase());
+        }
+        
+        const customerEmailMatch = text.match(/"customer_email"\s*:\s*"([^"]+@[^"]+)"/i);
+        if (customerEmailMatch && isValidEmail(customerEmailMatch[1].toLowerCase())) {
+          emails.add(customerEmailMatch[1].toLowerCase());
+        }
+        
+        const shopOwnerMatch = text.match(/"shop_owner"\s*:\s*"([^"]+)"/i);
+        const shopDomainMatch = text.match(/"domain"\s*:\s*"([^"]+)"/i);
+        if (shopOwnerMatch && shopDomainMatch) {
+          // Try to construct potential email from shop owner name
+          const ownerName = shopOwnerMatch[1].toLowerCase().replace(/\s+/g, '.');
+          const domain = shopDomainMatch[1];
+          const potentialEmail = `${ownerName}@${domain}`;
+          if (isValidEmail(potentialEmail)) {
+            console.log(`[EmailExtractor] Potential owner email: ${potentialEmail}`);
+          }
+        }
+      }
+    } catch (err) {
+      // Silently continue - endpoint might not exist
+    }
+  }
+  
+  console.log(`[EmailExtractor] Shopify endpoints found ${emails.size} emails`);
+  return emails;
+}
+
+// Extract emails from inline JavaScript/JSON in HTML
+function extractFromJavaScriptVariables(html: string): Set<string> {
+  const emails = new Set<string>();
+  
+  // Look for Shopify.shop configuration
+  const shopifyShopMatch = html.match(/Shopify\.shop\s*=\s*"([^"]+)"/);
+  const shopifyEmailMatch = html.match(/Shopify\..*?email.*?['":][\s]*['"]([^'"]+@[^'"]+)['"]/gi);
+  
+  if (shopifyEmailMatch) {
+    shopifyEmailMatch.forEach(match => {
+      const emailMatch = match.match(EMAIL_REGEX);
+      if (emailMatch) {
+        emailMatch.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+    });
+  }
+  
+  // Look for JSON-embedded contact info
+  const jsonPatterns = [
+    /"contact_email"\s*:\s*"([^"]+@[^"]+)"/gi,
+    /"support_email"\s*:\s*"([^"]+@[^"]+)"/gi,
+    /"store_email"\s*:\s*"([^"]+@[^"]+)"/gi,
+    /"merchant_email"\s*:\s*"([^"]+@[^"]+)"/gi,
+    /"owner_email"\s*:\s*"([^"]+@[^"]+)"/gi,
+    /"notification_email"\s*:\s*"([^"]+@[^"]+)"/gi,
+    /"reply_to"\s*:\s*"([^"]+@[^"]+)"/gi,
+    /email['"]?\s*[:=]\s*['"]([^'"]+@[^'"]+)['"]/gi,
+  ];
+  
+  jsonPatterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const email = match[1].toLowerCase().trim();
+      if (isValidEmail(email)) {
+        emails.add(email);
+      }
+    }
+  });
+  
+  // Look for window.__INITIAL_STATE__ or similar React/Vue hydration data
+  const initialStateMatch = html.match(/window\.__[A-Z_]+__\s*=\s*(\{[\s\S]*?\});/);
+  if (initialStateMatch) {
+    const stateEmails = initialStateMatch[1].match(EMAIL_REGEX) || [];
+    stateEmails.forEach(email => {
+      if (isValidEmail(email.toLowerCase())) {
+        emails.add(email.toLowerCase());
+      }
+    });
   }
   
   return emails;
@@ -1761,8 +1937,22 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     
     const isEcommerceSite = isShopifyOrEcommerce(rootHtml);
     if (isEcommerceSite) {
-      console.log(`[EmailExtractor] Detected e-commerce/Shopify site - will use aggressive scanning for policy pages`);
+      console.log(`[EmailExtractor] Detected e-commerce/Shopify site - will use aggressive scanning`);
       methodsUsed.push('ecommerce_detection');
+      
+      // Extract from Shopify API endpoints
+      const shopifyEmails = await extractFromShopifyEndpoints(baseUrl);
+      shopifyEmails.forEach(e => allEmails.add(e));
+      if (shopifyEmails.size > 0) {
+        methodsUsed.push('shopify_api');
+      }
+      
+      // Extract from JavaScript variables in the HTML
+      const jsEmails = extractFromJavaScriptVariables(rootHtml);
+      jsEmails.forEach(e => allEmails.add(e));
+      if (jsEmails.size > 0) {
+        methodsUsed.push('js_variables');
+      }
     }
     
     // Platform detection for targeted scanning
@@ -1779,6 +1969,16 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     console.log(`[EmailExtractor] Step 2: Scanning critical policy pages first (Terms of Service, Privacy Policy, etc.)...`);
     const criticalPolicyUrls: string[] = [];
     const addedPolicyPaths = new Set<string>();
+    
+    // Add Shopify-specific policy pages first for e-commerce sites
+    if (isEcommerceSite) {
+      for (const path of SHOPIFY_POLICY_PAGES) {
+        if (!addedPolicyPaths.has(path)) {
+          criticalPolicyUrls.push(`${baseUrl}${path}`);
+          addedPolicyPaths.add(path);
+        }
+      }
+    }
     
     // Add platform-specific paths first (higher priority for detected platforms)
     for (const path of platformPaths) {
