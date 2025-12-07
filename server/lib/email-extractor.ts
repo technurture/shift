@@ -829,7 +829,7 @@ interface FetchResult {
   shadowEmails?: Set<string>;
 }
 
-async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false, isRetry: boolean = false): Promise<string | null> {
+async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false, isRetry: boolean = false): Promise<FetchResult> {
   let page: any = null;
   try {
     const browser = await getBrowser();
@@ -928,11 +928,24 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
+    // Wait for dynamic content to fully load
+    await waitForDynamicContent(page, 5000);
+    
     const html = await page.content();
-    return html;
+    
+    // Check for bot protection/blocked page
+    const blocked = detectBlockedPage(html);
+    
+    // Extract emails from iframes and shadow DOM
+    const iframeEmails = await extractFromIframes(page);
+    const shadowEmails = await extractFromShadowDOM(page);
+    
+    console.log(`[EmailExtractor] Enhanced extraction: ${iframeEmails.size} iframe emails, ${shadowEmails.size} shadow DOM emails`);
+    
+    return { html, blocked, iframeEmails, shadowEmails };
   } catch (error: any) {
     console.error(`[EmailExtractor] Browser fetch (${mode}) failed for ${url}:`, error.message);
-    return null;
+    return { html: null };
   } finally {
     if (page) {
       try {
@@ -942,19 +955,25 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
   }
 }
 
-async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Promise<{ html: string | null; mobileHtml: string | null; emails: Set<string>; usedMobile: boolean }> {
+async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Promise<{ html: string | null; mobileHtml: string | null; emails: Set<string>; usedMobile: boolean; blocked?: BlockedStatus }> {
   const shouldFullScroll = isPolicyPage(url);
   console.log(`[EmailExtractor] Fetching with desktop viewport: ${url}${shouldFullScroll ? ' (full scroll for policy page)' : ''}`);
   
   // Use longer wait time for e-commerce sites
   const effectiveWaitTime = waitTime + 1000; // Add 1 second for more reliable extraction
   
-  let desktopHtml = await fetchPageWithBrowser(url, effectiveWaitTime, 'desktop', shouldFullScroll, false);
+  let desktopResult = await fetchPageWithBrowser(url, effectiveWaitTime, 'desktop', shouldFullScroll, false);
+  let desktopHtml = desktopResult.html;
+  let blockedStatus = desktopResult.blocked;
   
   let allEmails = new Set<string>();
   let usedMobile = false;
   let mobileHtmlResult: string | null = null;
   let isEcommerce = false;
+  
+  // Add iframe and shadow DOM emails from desktop fetch
+  desktopResult.iframeEmails?.forEach(e => allEmails.add(e));
+  desktopResult.shadowEmails?.forEach(e => allEmails.add(e));
   
   if (desktopHtml) {
     isEcommerce = isShopifyOrEcommerce(desktopHtml);
@@ -965,26 +984,33 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
     // Retry with longer wait if e-commerce site and no emails found
     if (desktopEmails.size === 0 && isEcommerce) {
       console.log(`[EmailExtractor] E-commerce site with no emails, retrying with longer wait...`);
-      const retryHtml = await fetchPageWithBrowser(url, effectiveWaitTime + 2000, 'desktop', true, true);
-      if (retryHtml) {
-        const retryEmails = extractEmailsFromHtml(retryHtml);
+      const retryResult = await fetchPageWithBrowser(url, effectiveWaitTime + 2000, 'desktop', true, true);
+      if (retryResult.html) {
+        const retryEmails = extractEmailsFromHtml(retryResult.html);
         retryEmails.forEach(e => allEmails.add(e));
+        retryResult.iframeEmails?.forEach(e => allEmails.add(e));
+        retryResult.shadowEmails?.forEach(e => allEmails.add(e));
         if (retryEmails.size > 0) {
           console.log(`[EmailExtractor] Retry found ${retryEmails.size} emails`);
-          desktopHtml = retryHtml;
+          desktopHtml = retryResult.html;
+        }
+        if (retryResult.blocked?.isBlocked) {
+          blockedStatus = retryResult.blocked;
         }
       }
     }
     
     if (allEmails.size < 2) {
       console.log(`[EmailExtractor] Few emails found on desktop, trying mobile viewport...`);
-      const mobileHtml = await fetchPageWithBrowser(url, effectiveWaitTime, 'mobile', shouldFullScroll, false);
+      const mobileResult = await fetchPageWithBrowser(url, effectiveWaitTime, 'mobile', shouldFullScroll, false);
       
-      if (mobileHtml) {
-        mobileHtmlResult = mobileHtml;
-        const mobileEmails = extractEmailsFromHtml(mobileHtml);
+      if (mobileResult.html) {
+        mobileHtmlResult = mobileResult.html;
+        const mobileEmails = extractEmailsFromHtml(mobileResult.html);
         const beforeCount = allEmails.size;
         mobileEmails.forEach(e => allEmails.add(e));
+        mobileResult.iframeEmails?.forEach(e => allEmails.add(e));
+        mobileResult.shadowEmails?.forEach(e => allEmails.add(e));
         const newFromMobile = allEmails.size - beforeCount;
         
         if (newFromMobile > 0) {
@@ -992,39 +1018,54 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
           usedMobile = true;
         }
         
-        return { html: desktopHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile };
+        if (mobileResult.blocked?.isBlocked && !blockedStatus?.isBlocked) {
+          blockedStatus = mobileResult.blocked;
+        }
+        
+        return { html: desktopHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile, blocked: blockedStatus };
       }
     }
   } else {
     console.log(`[EmailExtractor] Desktop fetch failed, trying mobile as fallback...`);
-    const mobileHtml = await fetchPageWithBrowser(url, effectiveWaitTime, 'mobile', shouldFullScroll, false);
+    const mobileResult = await fetchPageWithBrowser(url, effectiveWaitTime, 'mobile', shouldFullScroll, false);
     
-    if (mobileHtml) {
-      mobileHtmlResult = mobileHtml;
-      isEcommerce = isShopifyOrEcommerce(mobileHtml);
-      const mobileEmails = extractEmailsFromHtml(mobileHtml);
+    if (mobileResult.html) {
+      mobileHtmlResult = mobileResult.html;
+      isEcommerce = isShopifyOrEcommerce(mobileResult.html);
+      const mobileEmails = extractEmailsFromHtml(mobileResult.html);
       mobileEmails.forEach(e => allEmails.add(e));
+      mobileResult.iframeEmails?.forEach(e => allEmails.add(e));
+      mobileResult.shadowEmails?.forEach(e => allEmails.add(e));
       usedMobile = true;
+      
+      if (mobileResult.blocked?.isBlocked) {
+        blockedStatus = mobileResult.blocked;
+      }
       
       // Retry mobile if e-commerce and no emails
       if (mobileEmails.size === 0 && isEcommerce) {
         console.log(`[EmailExtractor] E-commerce mobile with no emails, retrying...`);
         const retryMobile = await fetchPageWithBrowser(url, effectiveWaitTime + 2000, 'mobile', true, true);
-        if (retryMobile) {
-          const retryEmails = extractEmailsFromHtml(retryMobile);
+        if (retryMobile.html) {
+          const retryEmails = extractEmailsFromHtml(retryMobile.html);
           retryEmails.forEach(e => allEmails.add(e));
+          retryMobile.iframeEmails?.forEach(e => allEmails.add(e));
+          retryMobile.shadowEmails?.forEach(e => allEmails.add(e));
           if (retryEmails.size > 0) {
             console.log(`[EmailExtractor] Mobile retry found ${retryEmails.size} emails`);
-            mobileHtmlResult = retryMobile;
+            mobileHtmlResult = retryMobile.html;
+          }
+          if (retryMobile.blocked?.isBlocked) {
+            blockedStatus = retryMobile.blocked;
           }
         }
       }
       
-      return { html: mobileHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile };
+      return { html: mobileResult.html, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile, blocked: blockedStatus };
     }
   }
   
-  return { html: desktopHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile };
+  return { html: desktopHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile, blocked: blockedStatus };
 }
 
 async function fetchPageSimple(url: string): Promise<string | null> {
@@ -2118,6 +2159,7 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     let usedBrowser = false;
     let usedMobileFallback = false;
     let combinedTextForAI = '';
+    let overallBlockedStatus: BlockedStatus | undefined;
     
     console.log(`[EmailExtractor] Starting enhanced extraction for: ${fullUrl}`);
     console.log(`[EmailExtractor] Base URL: ${baseUrl}, Domain: ${domain}, Brand: ${brandName}`);
@@ -2146,6 +2188,9 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
             browserResult.emails.forEach(e => allEmails.add(e));
             usedBrowser = true;
             usedMobileFallback = browserResult.usedMobile;
+            if (browserResult.blocked?.isBlocked && !overallBlockedStatus?.isBlocked) {
+              overallBlockedStatus = browserResult.blocked;
+            }
             combinedTextForAI += cheerio.load(browserResult.html)('body').text() + '\n\n';
             if (browserResult.mobileHtml && browserResult.usedMobile) {
               combinedTextForAI += cheerio.load(browserResult.mobileHtml)('body').text() + '\n\n';
@@ -2165,6 +2210,9 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
           browserResult.emails.forEach(e => allEmails.add(e));
           usedBrowser = true;
           usedMobileFallback = browserResult.usedMobile;
+          if (browserResult.blocked?.isBlocked && !overallBlockedStatus?.isBlocked) {
+            overallBlockedStatus = browserResult.blocked;
+          }
           pagesScanned++;
           combinedTextForAI += cheerio.load(browserResult.html)('body').text() + '\n\n';
           if (browserResult.mobileHtml && browserResult.usedMobile) {
@@ -2198,6 +2246,9 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
           browserResult.emails.forEach(e => allEmails.add(e));
           usedBrowser = true;
           usedMobileFallback = browserResult.usedMobile;
+          if (browserResult.blocked?.isBlocked && !overallBlockedStatus?.isBlocked) {
+            overallBlockedStatus = browserResult.blocked;
+          }
         }
       } else {
         initialEmails.forEach(e => allEmails.add(e));
@@ -2210,6 +2261,9 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       browserResult.emails.forEach(e => allEmails.add(e));
       usedBrowser = true;
       usedMobileFallback = browserResult.usedMobile;
+      if (browserResult.blocked?.isBlocked && !overallBlockedStatus?.isBlocked) {
+        overallBlockedStatus = browserResult.blocked;
+      }
     }
     
     if (!rootHtml) {
@@ -2456,10 +2510,30 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
     console.log(`[EmailExtractor] Total: ${emailArray.length} unique emails from ${pagesScanned} pages`);
     console.log(`[EmailExtractor] Methods used: ${methodsUsed.join(', ')}`);
     
+    // Validate emails with DNS MX record verification
+    let validatedEmails: string[] = [];
+    if (emailArray.length > 0) {
+      console.log(`[EmailExtractor] Validating ${emailArray.length} emails with MX record check...`);
+      validatedEmails = await validateEmails(emailArray);
+      console.log(`[EmailExtractor] ${validatedEmails.length} emails passed MX validation`);
+      methodsUsed.push('mx_validation');
+    }
+    
+    // Build extraction details with blocked status
+    const extractionDetails: ExtractionResult['extractionDetails'] = {};
+    if (overallBlockedStatus?.isBlocked) {
+      extractionDetails.blocked = true;
+      extractionDetails.blockedReason = overallBlockedStatus.reason;
+      extractionDetails.suggestedAction = overallBlockedStatus.suggestion;
+      console.log(`[EmailExtractor] Warning: Some pages were blocked - ${overallBlockedStatus.reason}`);
+    }
+    
     return {
-      emails: emailArray,
+      emails: validatedEmails.length > 0 ? validatedEmails : emailArray,
+      validatedEmails: validatedEmails,
       pagesScanned,
       methods: methodsUsed,
+      extractionDetails: Object.keys(extractionDetails).length > 0 ? extractionDetails : undefined,
     };
   } catch (error: any) {
     console.error('[EmailExtractor] Error:', error.message);
