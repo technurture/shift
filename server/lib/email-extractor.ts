@@ -4,6 +4,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import dns from "dns";
 import { promisify } from "util";
+import { batchVerifyEmails, EmailVerificationResult } from "./email-verifier";
 
 // Add stealth plugin for better anti-bot bypass
 puppeteer.use(StealthPlugin());
@@ -22,6 +23,7 @@ const DISPOSABLE_EMAIL_DOMAINS = new Set([
 ]);
 
 const OBFUSCATED_PATTERNS = [
+  // Original patterns
   /([a-zA-Z0-9._%+-]+)\s*\[\s*at\s*\]\s*([a-zA-Z0-9.-]+)\s*\[\s*dot\s*\]\s*([a-zA-Z]{2,})/gi,
   /([a-zA-Z0-9._%+-]+)\s*\(\s*at\s*\)\s*([a-zA-Z0-9.-]+)\s*\(\s*dot\s*\)\s*([a-zA-Z]{2,})/gi,
   /([a-zA-Z0-9._%+-]+)\s*@\s*([a-zA-Z0-9.-]+)\s*\.\s*([a-zA-Z]{2,})/g,
@@ -35,7 +37,185 @@ const OBFUSCATED_PATTERNS = [
   /([a-zA-Z0-9._%+-]+)\s*_at_\s*([a-zA-Z0-9.-]+)\s*_dot_\s*([a-zA-Z]{2,})/gi,
   /([a-zA-Z0-9._%+-]+)\s*@\s*([a-zA-Z0-9.-]+)\s*\(dot\)\s*([a-zA-Z]{2,})/gi,
   /([a-zA-Z0-9._%+-]+)\s*\(at\)\s*([a-zA-Z0-9.-]+)\s*\.\s*([a-zA-Z]{2,})/gi,
+  // New patterns: "email AT domain DOT com" (uppercase words)
+  // Sample: "info AT company DOT com" -> info@company.com
+  /([a-zA-Z0-9._%+-]+)\s+AT\s+([a-zA-Z0-9.-]+)\s+DOT\s+([a-zA-Z]{2,})/g,
+  // New patterns: "email/at/domain/dot/com" (slash separated)
+  // Sample: "info/at/company/dot/com" -> info@company.com
+  /([a-zA-Z0-9._%+-]+)\/at\/([a-zA-Z0-9.-]+)\/dot\/([a-zA-Z]{2,})/gi,
+  // New patterns: Space separated AT and DOT (mixed case)
+  // Sample: "info At company Dot com" -> info@company.com
+  /([a-zA-Z0-9._%+-]+)\s+[Aa][Tt]\s+([a-zA-Z0-9.-]+)\s+[Dd][Oo][Tt]\s+([a-zA-Z]{2,})/g,
+  // New patterns: Parenthesized @ symbol
+  // Sample: "info(@)company(.)com" -> info@company.com
+  /([a-zA-Z0-9._%+-]+)\s*\(@\)\s*([a-zA-Z0-9.-]+)\s*\(\.\)\s*([a-zA-Z]{2,})/g,
+  // New patterns: Bracket @ symbol
+  // Sample: "info[@]company[.]com" -> info@company.com
+  /([a-zA-Z0-9._%+-]+)\s*\[@\]\s*([a-zA-Z0-9.-]+)\s*\[\.\]\s*([a-zA-Z]{2,})/g,
+  // New patterns: Unicode obfuscation with full-width characters
+  // Sample: "info＠company．com" (using full-width @ and .)
+  /([a-zA-Z0-9._%+-]+)\s*[＠@]\s*([a-zA-Z0-9.-]+)\s*[．.]\s*([a-zA-Z]{2,})/g,
+  // New patterns: Multiple dots in obfuscation
+  // Sample: "info [at] company [dot] co [dot] ng" -> info@company.co.ng
+  /([a-zA-Z0-9._%+-]+)\s*\[at\]\s*([a-zA-Z0-9.-]+)\s*\[dot\]\s*([a-zA-Z0-9]+)\s*\[dot\]\s*([a-zA-Z]{2,})/gi,
 ];
+
+// Nigerian/African email domain patterns
+// Sample domains: .ng (Nigeria), .com.ng, .co.ng, .gh (Ghana), .ke (Kenya), .za (South Africa)
+const AFRICAN_EMAIL_DOMAINS = [
+  '.ng', '.com.ng', '.co.ng', '.org.ng', '.gov.ng', '.edu.ng', '.net.ng',
+  '.gh', '.com.gh', '.co.gh', '.org.gh',
+  '.ke', '.co.ke', '.or.ke',
+  '.za', '.co.za', '.org.za', '.net.za',
+  '.eg', '.com.eg',
+  '.et', '.com.et',
+  '.tz', '.co.tz',
+  '.ug', '.co.ug',
+  '.rw', '.co.rw',
+  '.sn', '.com.sn',
+  '.ci', '.co.ci',
+  '.cm', '.com.cm',
+  '.ao', '.co.ao',
+  '.mz', '.co.mz',
+];
+
+// Common Nigerian/African email providers and patterns
+const AFRICAN_EMAIL_PROVIDERS = [
+  'yahoo.com', 'gmail.com', 'hotmail.com', 'outlook.com',
+  'ymail.com', 'rocketmail.com', 'yahoo.co.uk',
+];
+
+// Function to decode HTML entities in text
+// Sample: "info&#64;company&#46;com" -> "info@company.com"
+function decodeHtmlEntities(text: string): string {
+  if (!text) return '';
+  
+  let decoded = text;
+  
+  // Decode numeric HTML entities (&#64; for @, &#46; for .)
+  decoded = decoded.replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)));
+  
+  // Decode hex HTML entities (&#x40; for @)
+  decoded = decoded.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  
+  // Decode named HTML entities
+  const namedEntities: { [key: string]: string } = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&apos;': "'",
+    '&nbsp;': ' ',
+    '&commat;': '@',
+    '&period;': '.',
+  };
+  
+  for (const [entity, char] of Object.entries(namedEntities)) {
+    decoded = decoded.replace(new RegExp(entity, 'gi'), char);
+  }
+  
+  return decoded;
+}
+
+// Function to decode reversed/backwards email
+// Sample: "moc.ynapmoc@ofni" -> "info@company.com"
+function decodeReversedEmail(text: string): string | null {
+  if (!text) return null;
+  
+  // Reverse the text
+  const reversed = text.split('').reverse().join('');
+  
+  // Check if it looks like a valid email
+  const emailMatch = reversed.match(EMAIL_REGEX);
+  if (emailMatch && emailMatch.length > 0) {
+    console.log(`[EmailExtractor] Decoded reversed email: ${text} -> ${emailMatch[0]}`);
+    return emailMatch[0].toLowerCase();
+  }
+  
+  return null;
+}
+
+// Function to decode Base64 encoded emails
+// Sample: "aW5mb0Bjb21wYW55LmNvbQ==" -> "info@company.com"
+function decodeBase64Email(encoded: string): string | null {
+  if (!encoded) return null;
+  
+  try {
+    // Check if it looks like Base64
+    if (!/^[A-Za-z0-9+/]+=*$/.test(encoded)) return null;
+    
+    const decoded = Buffer.from(encoded, 'base64').toString('utf-8');
+    const emailMatch = decoded.match(EMAIL_REGEX);
+    
+    if (emailMatch && emailMatch.length > 0) {
+      console.log(`[EmailExtractor] Decoded Base64 email: ${encoded} -> ${emailMatch[0]}`);
+      return emailMatch[0].toLowerCase();
+    }
+  } catch {
+    // Not valid Base64
+  }
+  
+  return null;
+}
+
+// Extract emails that might be reversed in the HTML
+// Sample text containing: "moc.ynapmoc@ofni" or data-email-reversed="moc.ynapmoc@ofni"
+function extractReversedEmails(text: string): Set<string> {
+  const emails = new Set<string>();
+  
+  // Look for patterns that look like reversed emails (ending with common TLDs reversed)
+  const reversedTldPatterns = [
+    /moc\.[a-zA-Z0-9.-]+@[a-zA-Z0-9._%+-]+/g,  // .com reversed
+    /gro\.[a-zA-Z0-9.-]+@[a-zA-Z0-9._%+-]+/g,  // .org reversed
+    /ten\.[a-zA-Z0-9.-]+@[a-zA-Z0-9._%+-]+/g,  // .net reversed
+    /gn\.[a-zA-Z0-9.-]+@[a-zA-Z0-9._%+-]+/g,   // .ng reversed
+    /az\.[a-zA-Z0-9.-]+@[a-zA-Z0-9._%+-]+/g,   // .za reversed
+    /ek\.[a-zA-Z0-9.-]+@[a-zA-Z0-9._%+-]+/g,   // .ke reversed
+    /hg\.[a-zA-Z0-9.-]+@[a-zA-Z0-9._%+-]+/g,   // .gh reversed
+  ];
+  
+  for (const pattern of reversedTldPatterns) {
+    const matches = text.match(pattern) || [];
+    for (const match of matches) {
+      const decoded = decodeReversedEmail(match);
+      if (decoded && isValidEmail(decoded)) {
+        emails.add(decoded);
+      }
+    }
+  }
+  
+  return emails;
+}
+
+// Extract Base64 encoded emails from attributes
+// Sample: <span data-email="aW5mb0Bjb21wYW55LmNvbQ==">
+function extractBase64Emails(html: string): Set<string> {
+  const emails = new Set<string>();
+  
+  // Look for data attributes with Base64-looking content
+  const base64AttrPattern = /data-[a-z-]*(?:email|mail|contact)[a-z-]*\s*=\s*["']([A-Za-z0-9+/]+=*)["']/gi;
+  let match;
+  
+  while ((match = base64AttrPattern.exec(html)) !== null) {
+    const decoded = decodeBase64Email(match[1]);
+    if (decoded && isValidEmail(decoded)) {
+      emails.add(decoded);
+    }
+  }
+  
+  // Also check for standalone Base64 strings that decode to emails
+  const base64Pattern = /[A-Za-z0-9+/]{20,}={0,2}/g;
+  const base64Matches = html.match(base64Pattern) || [];
+  
+  for (const b64 of base64Matches) {
+    const decoded = decodeBase64Email(b64);
+    if (decoded && isValidEmail(decoded)) {
+      emails.add(decoded);
+    }
+  }
+  
+  return emails;
+}
 
 const CRITICAL_POLICY_PATHS = [
   '/policies/terms-of-service',
@@ -455,17 +635,98 @@ const COMMON_EMAIL_PREFIXES = [
   'general',
 ];
 
+export interface EmailWithConfidence {
+  email: string;
+  confidence: number;
+  source: string;
+  verified?: boolean;
+  verificationStatus?: 'valid' | 'invalid' | 'unknown' | 'catch_all' | 'timeout';
+}
+
+const PLACEHOLDER_PATTERNS = [
+  'example', 'test', 'sample', 'demo', 'placeholder', 'your', 'name@', 
+  'email@email', 'user@', 'xxx@', 'abc@', 'someone@', 'person@',
+  '@domain', '@company', '@site', '@website', '@yoursite', '@yourdomain'
+];
+
+const CONTACT_PAGE_PATTERNS = [
+  '/contact', '/about', '/contact-us', '/about-us', '/team', '/support',
+  '/help', '/customer-service', '/get-in-touch', '/reach-us'
+];
+
+export function calculateEmailConfidence(
+  email: string, 
+  source: string, 
+  websiteDomain: string,
+  extractionContext?: {
+    foundInMailto?: boolean;
+    foundInJavaScript?: boolean;
+    pageUrl?: string;
+  }
+): number {
+  let confidence = 50;
+  const emailLower = email.toLowerCase();
+  const emailDomain = emailLower.split('@')[1] || '';
+  const emailPrefix = emailLower.split('@')[0] || '';
+  const cleanWebsiteDomain = websiteDomain.replace('www.', '').toLowerCase();
+  
+  if (emailDomain === cleanWebsiteDomain || emailDomain.endsWith('.' + cleanWebsiteDomain)) {
+    confidence += 20;
+  }
+  
+  const pageUrl = extractionContext?.pageUrl?.toLowerCase() || source.toLowerCase();
+  if (CONTACT_PAGE_PATTERNS.some(pattern => pageUrl.includes(pattern))) {
+    confidence += 15;
+  }
+  
+  if (extractionContext?.foundInMailto) {
+    confidence += 10;
+  }
+  
+  if (COMMON_EMAIL_PREFIXES.includes(emailPrefix)) {
+    confidence += 10;
+  }
+  
+  if (extractionContext?.foundInJavaScript && !extractionContext?.foundInMailto) {
+    confidence -= 20;
+  }
+  
+  if (PLACEHOLDER_PATTERNS.some(pattern => emailLower.includes(pattern))) {
+    confidence -= 30;
+  }
+  
+  return Math.max(0, Math.min(100, confidence));
+}
+
 export interface ExtractionResult {
   emails: string[];
   error?: string;
   pagesScanned?: number;
+  urlsChecked?: string[];
+  scanQuality?: 'thorough' | 'partial' | 'blocked';
   methods?: string[];
   validatedEmails?: string[];
+  emailsWithConfidence?: EmailWithConfidence[];
   extractionDetails?: {
     blocked?: boolean;
     blockedReason?: string;
     suggestedAction?: string;
   };
+}
+
+// Priority levels for page scanning
+enum PagePriority {
+  CONTACT = 1,    // Highest priority - contact pages
+  ABOUT = 2,      // About pages
+  LEGAL = 3,      // Legal/policy pages
+  FOOTER = 4,     // Footer links
+  OTHER = 5       // Other pages
+}
+
+interface PriorityPage {
+  url: string;
+  priority: PagePriority;
+  source: string;
 }
 
 // MX record cache to avoid repeated DNS lookups
@@ -753,12 +1014,18 @@ async function extractFromShadowDOM(page: any): Promise<Set<string>> {
   return emails;
 }
 
-// Wait for dynamic content to load with MutationObserver
-async function waitForDynamicContent(page: any, timeout: number = 5000): Promise<void> {
+// Wait for page stability by monitoring DOM mutations and network
+async function waitForPageStability(page: any, options: { timeout?: number; mutationWait?: number } = {}): Promise<boolean> {
+  const timeout = options.timeout || 8000;
+  const mutationWait = options.mutationWait || 2000;
+  
+  console.log(`[EmailExtractor] Waiting for page stability (timeout: ${timeout}ms, mutation wait: ${mutationWait}ms)`);
+  
   try {
-    await page.evaluate((timeout: number) => {
-      return new Promise<void>((resolve) => {
+    const isStable = await page.evaluate((settings: { timeout: number; mutationWait: number }) => {
+      return new Promise<boolean>((resolve) => {
         let lastMutationTime = Date.now();
+        let pendingRequests = 0;
         const startTime = Date.now();
         
         const observer = new MutationObserver(() => {
@@ -772,20 +1039,91 @@ async function waitForDynamicContent(page: any, timeout: number = 5000): Promise
           characterData: true
         });
         
-        // Check every 200ms if mutations have stopped
         const checkInterval = setInterval(() => {
           const now = Date.now();
-          // If no mutations for 1 second, or total timeout reached
-          if (now - lastMutationTime > 1000 || now - startTime > timeout) {
+          const timeSinceLastMutation = now - lastMutationTime;
+          const elapsedTime = now - startTime;
+          
+          if (timeSinceLastMutation > settings.mutationWait || elapsedTime > settings.timeout) {
+            clearInterval(checkInterval);
+            observer.disconnect();
+            resolve(timeSinceLastMutation > settings.mutationWait);
+          }
+        }, 100);
+      });
+    }, { timeout, mutationWait });
+    
+    console.log(`[EmailExtractor] Page stability: ${isStable ? 'stable' : 'timeout reached'}`);
+    return isStable;
+  } catch (error) {
+    console.log('[EmailExtractor] Page stability check failed, using fallback wait');
+    await new Promise(r => setTimeout(r, 2000));
+    return false;
+  }
+}
+
+// Wait for dynamic content to load with MutationObserver - improved version
+async function waitForDynamicContent(page: any, timeout: number = 5000): Promise<void> {
+  try {
+    await page.evaluate((timeout: number) => {
+      return new Promise<void>((resolve) => {
+        let lastMutationTime = Date.now();
+        const startTime = Date.now();
+        const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+        let foundEmailContent = false;
+        
+        const observer = new MutationObserver((mutations) => {
+          lastMutationTime = Date.now();
+          
+          for (const mutation of mutations) {
+            if (mutation.type === 'childList') {
+              mutation.addedNodes.forEach((node) => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                  const text = (node as Element).textContent || '';
+                  if (emailRegex.test(text)) {
+                    foundEmailContent = true;
+                  }
+                  const el = node as Element;
+                  if (el.querySelector && (
+                    el.querySelector('[href^="mailto:"]') ||
+                    el.querySelector('.contact, .about, #contact, #about, [class*="contact"], [class*="email"]')
+                  )) {
+                    foundEmailContent = true;
+                  }
+                }
+              });
+            }
+          }
+        });
+        
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          characterData: true
+        });
+        
+        const checkInterval = setInterval(() => {
+          const now = Date.now();
+          const timeSinceLastMutation = now - lastMutationTime;
+          const elapsedTime = now - startTime;
+          
+          if (foundEmailContent && timeSinceLastMutation > 500) {
+            clearInterval(checkInterval);
+            observer.disconnect();
+            resolve();
+            return;
+          }
+          
+          if (timeSinceLastMutation > 1000 || elapsedTime > timeout) {
             clearInterval(checkInterval);
             observer.disconnect();
             resolve();
           }
-        }, 200);
+        }, 100);
       });
     }, timeout);
   } catch {
-    // Fallback to simple wait
     await new Promise(r => setTimeout(r, 2000));
   }
 }
@@ -829,20 +1167,31 @@ interface FetchResult {
   shadowEmails?: Set<string>;
 }
 
+// Detect SPA framework type from HTML
+function detectSpaFramework(html: string): string | null {
+  if (html.includes('id="__next"') || html.includes('__NEXT_DATA__')) return 'nextjs';
+  if (html.includes('id="__nuxt"') || html.includes('__NUXT__')) return 'nuxt';
+  if (html.includes('ng-version') || html.includes('ng-app')) return 'angular';
+  if (html.includes('data-reactroot') || html.includes('id="root"')) return 'react';
+  if (html.includes('data-v-') || html.includes('id="app"')) return 'vue';
+  if (html.includes('data-svelte') || html.includes('__svelte')) return 'svelte';
+  return null;
+}
+
 async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false, isRetry: boolean = false): Promise<FetchResult> {
   let page: any = null;
+  const DEFAULT_TIMEOUT = 45000;
+  
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
     
-    // Use random user agent for better anti-bot bypass
     const userAgent = mode === 'mobile' ? MOBILE_USER_AGENT : getRandomUserAgent();
     const viewport = mode === 'mobile' ? MOBILE_VIEWPORT : DESKTOP_VIEWPORT;
     
     await page.setUserAgent(userAgent);
     await page.setViewport(viewport);
     
-    // Set extra headers for more realistic requests
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept-Encoding': 'gzip, deflate, br',
@@ -862,23 +1211,76 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
       }
     });
     
-    await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
-    });
+    let navigationSucceeded = false;
     
-    // Longer wait for retries to ensure JavaScript fully loads
-    const effectiveWait = isRetry ? waitTime + 2000 : waitTime;
+    try {
+      console.log(`[EmailExtractor] Navigating to ${url} with networkidle2...`);
+      await page.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: DEFAULT_TIMEOUT,
+      });
+      navigationSucceeded = true;
+    } catch (navError: any) {
+      console.log(`[EmailExtractor] networkidle2 failed, trying networkidle0 fallback...`);
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: DEFAULT_TIMEOUT,
+        });
+        navigationSucceeded = true;
+      } catch (fallbackError: any) {
+        console.log(`[EmailExtractor] networkidle0 also failed, trying domcontentloaded...`);
+        try {
+          await page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: DEFAULT_TIMEOUT,
+          });
+          navigationSucceeded = true;
+        } catch (lastError: any) {
+          console.error(`[EmailExtractor] All navigation attempts failed for ${url}`);
+          return { html: null };
+        }
+      }
+    }
+    
+    const effectiveWait = isRetry ? waitTime + 3000 : waitTime;
     await new Promise(resolve => setTimeout(resolve, effectiveWait));
     
-    // Wait for Shopify-specific elements to load
+    const initialHtml = await page.content();
+    const spaFramework = detectSpaFramework(initialHtml);
+    
+    if (spaFramework) {
+      console.log(`[EmailExtractor] Detected ${spaFramework} SPA, waiting for hydration...`);
+      
+      try {
+        await page.waitForFunction(() => {
+          const w = window as any;
+          if (w.__NEXT_DATA__ && document.querySelector('[data-reactroot], #__next')) {
+            return document.body.innerHTML.length > 1000;
+          }
+          if (w.__NUXT__ || document.querySelector('#__nuxt')) {
+            return document.body.innerHTML.length > 1000;
+          }
+          if (document.querySelector('[ng-version]')) {
+            return !document.querySelector('.ng-pending');
+          }
+          if (document.querySelector('[data-reactroot], #root')) {
+            return document.body.innerHTML.length > 500;
+          }
+          if (document.querySelector('[data-v-], #app')) {
+            return document.body.innerHTML.length > 500;
+          }
+          return document.readyState === 'complete';
+        }, { timeout: 8000 });
+        console.log(`[EmailExtractor] ${spaFramework} hydration complete`);
+      } catch {
+        console.log(`[EmailExtractor] SPA hydration wait timed out, continuing...`);
+      }
+    }
+    
     try {
-      await page.waitForFunction(() => {
-        // Check if page is fully loaded
-        return document.readyState === 'complete';
-      }, { timeout: 5000 });
+      await page.waitForFunction(() => document.readyState === 'complete', { timeout: 8000 });
     } catch {
-      // Continue even if timeout
     }
     
     if (fullScroll || isPolicyPage(url)) {
@@ -928,15 +1330,14 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
-    // Wait for dynamic content to fully load
     await waitForDynamicContent(page, 5000);
+    
+    await waitForPageStability(page, { timeout: 8000, mutationWait: 2000 });
     
     const html = await page.content();
     
-    // Check for bot protection/blocked page
     const blocked = detectBlockedPage(html);
     
-    // Extract emails from iframes and shadow DOM
     const iframeEmails = await extractFromIframes(page);
     const shadowEmails = await extractFromShadowDOM(page);
     
@@ -1479,54 +1880,540 @@ function extractFromJavaScriptVariables(html: string): Set<string> {
 
 async function fetchSitemap(baseUrl: string): Promise<string[]> {
   const contactUrls: string[] = [];
+  const processedSitemaps = new Set<string>();
+  
+  const contactKeywords = [
+    'contact', 'about', 'support', 'help', 'team', 'legal', 'privacy', 'terms', 
+    'faq', 'customer', 'service', 'info', 'company', 'imprint', 'impressum',
+    'reach', 'touch', 'email', 'mail', 'feedback', 'inquiry', 'enquiry'
+  ];
+  
+  async function parseSitemap(sitemapUrl: string, depth: number = 0): Promise<void> {
+    if (depth > 2 || processedSitemaps.has(sitemapUrl)) {
+      return;
+    }
+    processedSitemaps.add(sitemapUrl);
+    
+    try {
+      console.log(`[EmailExtractor] Fetching sitemap: ${sitemapUrl} (depth: ${depth})`);
+      const response = await fetch(sitemapUrl, {
+        headers: {
+          'User-Agent': getRandomUserAgent(),
+          'Accept': 'application/xml, text/xml, */*',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      
+      if (!response.ok) {
+        console.log(`[EmailExtractor] Sitemap fetch failed with status: ${response.status}`);
+        return;
+      }
+      
+      const xml = await response.text();
+      const $ = cheerio.load(xml, { xmlMode: true });
+      
+      const isSitemapIndex = $('sitemapindex').length > 0;
+      
+      if (isSitemapIndex) {
+        console.log(`[EmailExtractor] Found sitemap index file, processing nested sitemaps...`);
+        const nestedSitemaps: string[] = [];
+        
+        $('sitemap loc').each((_, el) => {
+          const nestedUrl = $(el).text().trim();
+          if (nestedUrl) {
+            const lowerUrl = nestedUrl.toLowerCase();
+            if (contactKeywords.some(kw => lowerUrl.includes(kw))) {
+              nestedSitemaps.unshift(nestedUrl);
+            } else if (lowerUrl.includes('page') || lowerUrl.includes('post')) {
+              nestedSitemaps.push(nestedUrl);
+            } else {
+              nestedSitemaps.push(nestedUrl);
+            }
+          }
+        });
+        
+        console.log(`[EmailExtractor] Found ${nestedSitemaps.length} nested sitemaps`);
+        
+        const sitemapsToProcess = nestedSitemaps.slice(0, 5);
+        for (const nestedUrl of sitemapsToProcess) {
+          await parseSitemap(nestedUrl, depth + 1);
+          if (contactUrls.length >= 30) break;
+        }
+      } else {
+        $('url loc, loc').each((_, el) => {
+          const url = $(el).text().trim();
+          if (!url) return;
+          
+          const lowerUrl = url.toLowerCase();
+          
+          if (contactKeywords.some(keyword => lowerUrl.includes(keyword))) {
+            if (!contactUrls.includes(url)) {
+              contactUrls.push(url);
+            }
+          }
+        });
+      }
+    } catch (error: any) {
+      console.log(`[EmailExtractor] Error parsing sitemap ${sitemapUrl}: ${error.message}`);
+    }
+  }
   
   try {
     const sitemapUrls = [
       `${baseUrl}/sitemap.xml`,
       `${baseUrl}/sitemap_index.xml`,
       `${baseUrl}/sitemap/sitemap.xml`,
+      `${baseUrl}/wp-sitemap.xml`,
+      `${baseUrl}/page-sitemap.xml`,
+      `${baseUrl}/sitemap-pages.xml`,
     ];
     
     for (const sitemapUrl of sitemapUrls) {
-      try {
-        const response = await fetch(sitemapUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; EmailBot/1.0)',
-          },
-          signal: AbortSignal.timeout(10000),
-        });
-        
-        if (response.ok) {
-          const xml = await response.text();
-          const $ = cheerio.load(xml, { xmlMode: true });
-          
-          $('loc').each((_, el) => {
-            const url = $(el).text();
-            const lowerUrl = url.toLowerCase();
-            
-            const contactKeywords = ['contact', 'about', 'support', 'help', 'team', 'legal', 'privacy', 'terms', 'faq', 'customer', 'service', 'info', 'company'];
-            if (contactKeywords.some(keyword => lowerUrl.includes(keyword))) {
-              contactUrls.push(url);
-            }
-          });
-          
-          if (contactUrls.length > 0) {
-            console.log(`[EmailExtractor] Found ${contactUrls.length} contact-related URLs in sitemap`);
-            break;
-          }
-        }
-      } catch {}
+      await parseSitemap(sitemapUrl);
+      if (contactUrls.length > 0) {
+        console.log(`[EmailExtractor] Successfully found ${contactUrls.length} contact URLs from sitemaps`);
+        break;
+      }
     }
   } catch (error: any) {
     console.log(`[EmailExtractor] Sitemap fetch failed: ${error.message}`);
   }
   
-  return contactUrls.slice(0, 20);
+  return contactUrls.slice(0, 30);
+}
+
+function extractContactLinksFromPage(html: string, baseUrl: string): PriorityPage[] {
+  const priorityPages: PriorityPage[] = [];
+  const seenUrls = new Set<string>();
+  
+  try {
+    const $ = cheerio.load(html);
+    const baseUrlObj = new URL(baseUrl);
+    
+    const contactPatterns = [
+      /\bcontact\b/i, /\bcontact[-_]?us\b/i, /\bget[-_]?in[-_]?touch\b/i,
+      /\breach[-_]?us\b/i, /\bwrite[-_]?us\b/i, /\bemail[-_]?us\b/i
+    ];
+    const aboutPatterns = [
+      /\babout\b/i, /\babout[-_]?us\b/i, /\bour[-_]?team\b/i, /\bteam\b/i,
+      /\bcompany\b/i, /\bwho[-_]?we[-_]?are\b/i, /\bour[-_]?story\b/i
+    ];
+    const legalPatterns = [
+      /\blegal\b/i, /\bprivacy\b/i, /\bterms\b/i, /\bpolicy\b/i,
+      /\bimprint\b/i, /\bimpressum\b/i, /\bdisclaimer\b/i
+    ];
+    const supportPatterns = [
+      /\bsupport\b/i, /\bhelp\b/i, /\bfaq\b/i, /\bcustomer[-_]?service\b/i,
+      /\bcustomer[-_]?care\b/i, /\bhelp[-_]?center\b/i
+    ];
+    
+    function classifyUrl(url: string, linkText: string): { priority: PagePriority; source: string } | null {
+      const combined = `${url} ${linkText}`.toLowerCase();
+      
+      if (contactPatterns.some(p => p.test(combined))) {
+        return { priority: PagePriority.CONTACT, source: 'link' };
+      }
+      if (aboutPatterns.some(p => p.test(combined))) {
+        return { priority: PagePriority.ABOUT, source: 'link' };
+      }
+      if (legalPatterns.some(p => p.test(combined))) {
+        return { priority: PagePriority.LEGAL, source: 'link' };
+      }
+      if (supportPatterns.some(p => p.test(combined))) {
+        return { priority: PagePriority.CONTACT, source: 'link' };
+      }
+      
+      return null;
+    }
+    
+    function processLink(href: string, linkText: string, source: string): void {
+      if (!href || href.startsWith('#') || href.startsWith('javascript:') || 
+          href.startsWith('mailto:') || href.startsWith('tel:')) {
+        return;
+      }
+      
+      try {
+        let fullUrl: string;
+        if (href.startsWith('http')) {
+          fullUrl = href;
+        } else if (href.startsWith('//')) {
+          fullUrl = `${baseUrlObj.protocol}${href}`;
+        } else if (href.startsWith('/')) {
+          fullUrl = `${baseUrlObj.origin}${href}`;
+        } else {
+          fullUrl = new URL(href, baseUrl).href;
+        }
+        
+        const urlObj = new URL(fullUrl);
+        if (urlObj.host !== baseUrlObj.host) {
+          return;
+        }
+        
+        const cleanUrl = `${urlObj.origin}${urlObj.pathname}`.replace(/\/$/, '');
+        
+        if (seenUrls.has(cleanUrl)) {
+          return;
+        }
+        seenUrls.add(cleanUrl);
+        
+        const classification = classifyUrl(urlObj.pathname, linkText);
+        if (classification) {
+          priorityPages.push({
+            url: cleanUrl,
+            priority: classification.priority,
+            source: source
+          });
+        }
+      } catch {
+      }
+    }
+    
+    $('footer a, [class*="footer"] a, [id*="footer"] a').each((_, el) => {
+      const href = $(el).attr('href');
+      const text = $(el).text().trim();
+      if (href) {
+        processLink(href, text, 'footer');
+      }
+    });
+    
+    $('nav a, header a, [class*="nav"] a, [class*="menu"] a').each((_, el) => {
+      const href = $(el).attr('href');
+      const text = $(el).text().trim();
+      if (href) {
+        processLink(href, text, 'navigation');
+      }
+    });
+    
+    $('a').each((_, el) => {
+      const href = $(el).attr('href');
+      const text = $(el).text().trim();
+      if (href) {
+        processLink(href, text, 'body');
+      }
+    });
+    
+    priorityPages.sort((a, b) => a.priority - b.priority);
+    
+    console.log(`[EmailExtractor] Extracted ${priorityPages.length} contact-related links from page`);
+    
+  } catch (error: any) {
+    console.log(`[EmailExtractor] Error extracting contact links: ${error.message}`);
+  }
+  
+  return priorityPages;
+}
+
+interface CrawlResult {
+  emails: Set<string>;
+  pagesScanned: number;
+  urlsChecked: string[];
+  scanQuality: 'thorough' | 'partial' | 'blocked';
+  textContent: string;
+  blocked?: BlockedStatus;
+}
+
+async function crawlPriorityPages(
+  baseUrl: string,
+  initialHtml: string,
+  maxPages: number = 15,
+  fetchFunction: (url: string) => Promise<{ html: string | null; emails: Set<string>; blocked?: BlockedStatus }>
+): Promise<CrawlResult> {
+  const result: CrawlResult = {
+    emails: new Set<string>(),
+    pagesScanned: 0,
+    urlsChecked: [],
+    scanQuality: 'thorough',
+    textContent: ''
+  };
+  
+  const scannedUrls = new Set<string>();
+  const priorityQueue: PriorityPage[] = [];
+  
+  console.log(`[EmailExtractor] Starting priority crawl with max ${maxPages} pages`);
+  
+  const linksFromPage = extractContactLinksFromPage(initialHtml, baseUrl);
+  priorityQueue.push(...linksFromPage);
+  
+  try {
+    const sitemapUrls = await fetchSitemap(baseUrl);
+    for (const url of sitemapUrls) {
+      const lowerUrl = url.toLowerCase();
+      let priority = PagePriority.OTHER;
+      
+      if (/contact/i.test(lowerUrl)) priority = PagePriority.CONTACT;
+      else if (/about/i.test(lowerUrl)) priority = PagePriority.ABOUT;
+      else if (/legal|privacy|terms|policy/i.test(lowerUrl)) priority = PagePriority.LEGAL;
+      else if (/support|help|faq/i.test(lowerUrl)) priority = PagePriority.CONTACT;
+      
+      if (!priorityQueue.some(p => p.url === url)) {
+        priorityQueue.push({ url, priority, source: 'sitemap' });
+      }
+    }
+  } catch (error: any) {
+    console.log(`[EmailExtractor] Sitemap crawl failed: ${error.message}`);
+  }
+  
+  for (const path of PRIORITY_CONTACT_PATHS.slice(0, 30)) {
+    const fullUrl = `${baseUrl}${path}`;
+    if (!priorityQueue.some(p => p.url === fullUrl)) {
+      let priority = PagePriority.OTHER;
+      if (/contact/i.test(path)) priority = PagePriority.CONTACT;
+      else if (/about/i.test(path)) priority = PagePriority.ABOUT;
+      else if (/legal|privacy|terms|policy/i.test(path)) priority = PagePriority.LEGAL;
+      
+      priorityQueue.push({ url: fullUrl, priority, source: 'known-paths' });
+    }
+  }
+  
+  priorityQueue.sort((a, b) => a.priority - b.priority);
+  
+  console.log(`[EmailExtractor] Priority queue has ${priorityQueue.length} URLs to check`);
+  
+  let blockedCount = 0;
+  let successCount = 0;
+  
+  for (const page of priorityQueue) {
+    if (result.pagesScanned >= maxPages) {
+      console.log(`[EmailExtractor] Reached max pages limit (${maxPages})`);
+      result.scanQuality = 'partial';
+      break;
+    }
+    
+    if (scannedUrls.has(page.url)) {
+      continue;
+    }
+    scannedUrls.add(page.url);
+    
+    console.log(`[EmailExtractor] Scanning priority ${page.priority} page: ${page.url} (source: ${page.source})`);
+    
+    try {
+      const fetchResult = await fetchFunction(page.url);
+      result.pagesScanned++;
+      result.urlsChecked.push(page.url);
+      
+      if (fetchResult.blocked?.isBlocked) {
+        blockedCount++;
+        if (!result.blocked) {
+          result.blocked = fetchResult.blocked;
+        }
+        console.log(`[EmailExtractor] Page blocked: ${page.url} - ${fetchResult.blocked.reason}`);
+        continue;
+      }
+      
+      if (fetchResult.html) {
+        successCount++;
+        fetchResult.emails.forEach(e => result.emails.add(e));
+        
+        const $ = cheerio.load(fetchResult.html);
+        result.textContent += $('body').text() + '\n\n';
+        
+        const pageEmails = extractEmailsFromHtml(fetchResult.html);
+        pageEmails.forEach(e => result.emails.add(e));
+        
+        console.log(`[EmailExtractor] Page ${page.url}: found ${pageEmails.size} emails, total: ${result.emails.size}`);
+        
+        if (result.emails.size >= 5) {
+          console.log(`[EmailExtractor] Found enough emails (${result.emails.size}), stopping crawl`);
+          break;
+        }
+      }
+    } catch (error: any) {
+      console.log(`[EmailExtractor] Error scanning ${page.url}: ${error.message}`);
+    }
+  }
+  
+  if (blockedCount > successCount && result.pagesScanned > 3) {
+    result.scanQuality = 'blocked';
+  } else if (result.pagesScanned < maxPages / 2) {
+    result.scanQuality = 'partial';
+  }
+  
+  console.log(`[EmailExtractor] Crawl complete: ${result.pagesScanned} pages, ${result.emails.size} emails, quality: ${result.scanQuality}`);
+  
+  return result;
+}
+
+// Extract emails from contact forms
+// Sample: <form action="mailto:info@company.com"> or <input type="hidden" name="recipient" value="sales@company.com">
+function extractFromContactForms(html: string): Set<string> {
+  const emails = new Set<string>();
+  const $ = cheerio.load(html);
+  
+  console.log('[EmailExtractor] Starting contact form extraction...');
+  
+  // Find form elements
+  $('form').each((_, form) => {
+    const action = $(form).attr('action') || '';
+    
+    // Check action URL for mailto or email patterns
+    if (action.includes('mailto:')) {
+      const email = action.replace('mailto:', '').split('?')[0];
+      if (isValidEmail(email.toLowerCase())) {
+        console.log(`[EmailExtractor] Found email in form action: ${email}`);
+        emails.add(email.toLowerCase());
+      }
+    }
+    
+    // Check hidden inputs for email values
+    // Sample: <input type="hidden" name="recipient" value="contact@company.com">
+    $(form).find('input[type="hidden"]').each((_, input) => {
+      const value = $(input).attr('value') || '';
+      const name = $(input).attr('name') || '';
+      if (name.toLowerCase().includes('email') || 
+          name.toLowerCase().includes('recipient') || 
+          name.toLowerCase().includes('to') ||
+          name.toLowerCase().includes('mailto')) {
+        const found = value.match(EMAIL_REGEX);
+        if (found) {
+          found.forEach(e => {
+            if (isValidEmail(e.toLowerCase())) {
+              console.log(`[EmailExtractor] Found email in hidden input: ${e}`);
+              emails.add(e.toLowerCase());
+            }
+          });
+        }
+      }
+    });
+    
+    // Check form labels for email addresses
+    $(form).find('label').each((_, label) => {
+      const text = $(label).text();
+      const found = text.match(EMAIL_REGEX);
+      if (found) {
+        found.forEach(e => {
+          if (isValidEmail(e.toLowerCase())) {
+            console.log(`[EmailExtractor] Found email in form label: ${e}`);
+            emails.add(e.toLowerCase());
+          }
+        });
+      }
+    });
+    
+    // Check for data attributes on form that might contain encoded emails
+    const formDataEmail = $(form).attr('data-email') || $(form).attr('data-recipient') || '';
+    if (formDataEmail) {
+      const found = formDataEmail.match(EMAIL_REGEX);
+      if (found) {
+        found.forEach(e => {
+          if (isValidEmail(e.toLowerCase())) {
+            emails.add(e.toLowerCase());
+          }
+        });
+      }
+    }
+  });
+  
+  // Check for common contact form plugin patterns
+  // Sample: <div class="wpcf7-form" data-recipient="info@company.com">
+  $('[class*="contact-form"], [class*="wpcf7"], [id*="contact-form"], [class*="form-container"]').each((_, el) => {
+    const dataAttrs = $(el).attr();
+    if (dataAttrs) {
+      Object.values(dataAttrs).forEach((value: any) => {
+        if (typeof value === 'string') {
+          const found = value.match(EMAIL_REGEX);
+          if (found) {
+            found.forEach(e => {
+              if (isValidEmail(e.toLowerCase())) {
+                console.log(`[EmailExtractor] Found email in contact form data attr: ${e}`);
+                emails.add(e.toLowerCase());
+              }
+            });
+          }
+        }
+      });
+    }
+  });
+  
+  console.log(`[EmailExtractor] Contact forms extraction found ${emails.size} emails`);
+  return emails;
+}
+
+// Extract emails from near social media links
+// Sample: Find email near Facebook/LinkedIn/Twitter links
+function extractFromSocialLinks(html: string, domain: string): Set<string> {
+  const emails = new Set<string>();
+  const $ = cheerio.load(html);
+  
+  console.log('[EmailExtractor] Starting social links extraction...');
+  
+  const socialSelectors = [
+    'a[href*="facebook.com"]',
+    'a[href*="linkedin.com"]',
+    'a[href*="twitter.com"]',
+    'a[href*="instagram.com"]',
+    'a[href*="youtube.com"]',
+    'a[href*="tiktok.com"]',
+    'a[href*="pinterest.com"]',
+    'a[href*="whatsapp.com"]',
+    '[class*="social"]',
+    '[id*="social"]',
+    '[class*="follow-us"]',
+    '[class*="connect"]',
+  ];
+  
+  socialSelectors.forEach(selector => {
+    $(selector).each((_, el) => {
+      // Check parent and nearby elements for email references
+      const parent = $(el).parent();
+      const grandparent = parent.parent();
+      const nearbyText = parent.text() + ' ' + parent.next().text() + ' ' + parent.prev().text() + ' ' + grandparent.text();
+      
+      const found = nearbyText.match(EMAIL_REGEX);
+      if (found) {
+        found.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            console.log(`[EmailExtractor] Found email near social link: ${email}`);
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+    });
+  });
+  
+  // Check for "contact us via email" patterns near social links
+  // Sample: "Connect with us on social media or email us at info@company.com"
+  $('[class*="contact"], [class*="footer"], [class*="connect"], [id*="contact"], [id*="footer"]').each((_, el) => {
+    const text = $(el).text();
+    if (/contact.*email|email.*us|reach.*email|write.*email|send.*email|enquir.*email/i.test(text)) {
+      const found = text.match(EMAIL_REGEX);
+      if (found) {
+        found.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            console.log(`[EmailExtractor] Found email near contact text: ${email}`);
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+    }
+  });
+  
+  // Check for email icons (envelope/mail icons often indicate email)
+  $('[class*="mail"], [class*="envelope"], [class*="email-icon"], .fa-envelope, .icon-mail').each((_, el) => {
+    const parent = $(el).parent();
+    const nearby = parent.text() + ' ' + parent.next().text();
+    const found = nearby.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          console.log(`[EmailExtractor] Found email near mail icon: ${email}`);
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  console.log(`[EmailExtractor] Social links extraction found ${emails.size} emails`);
+  return emails;
 }
 
 function extractEmailsFromHtml(html: string): Set<string> {
   const emails = new Set<string>();
-  const $ = cheerio.load(html);
+  
+  // First, decode HTML entities in the raw HTML before parsing
+  // This helps catch emails obfuscated with &#64; (for @) and &#46; (for .)
+  const decodedHtml = decodeHtmlEntities(html);
+  
+  const $ = cheerio.load(decodedHtml);
   
   $('script, style, noscript, iframe').remove();
   
@@ -1824,6 +2711,73 @@ function extractEmailsFromHtml(html: string): Set<string> {
       });
     }
   });
+  
+  // Call new extraction functions with the original HTML
+  // Extract from contact forms
+  const contactFormEmails = extractFromContactForms(html);
+  contactFormEmails.forEach(e => emails.add(e));
+  
+  // Extract from near social links (use empty domain string as we don't have it here)
+  const socialLinkEmails = extractFromSocialLinks(html, '');
+  socialLinkEmails.forEach(e => emails.add(e));
+  
+  // Extract reversed emails (emails written backwards like moc.ynapmoc@ofni)
+  const reversedEmails = extractReversedEmails(html);
+  reversedEmails.forEach(e => emails.add(e));
+  
+  // Extract Base64 encoded emails from data attributes
+  const base64Emails = extractBase64Emails(html);
+  base64Emails.forEach(e => emails.add(e));
+  
+  // Extract emails from noscript tags (often contain fallback content with emails)
+  // Sample: <noscript>Contact us at info@company.com</noscript>
+  const noscriptRegex = /<noscript[^>]*>([\s\S]*?)<\/noscript>/gi;
+  let noscriptMatch;
+  while ((noscriptMatch = noscriptRegex.exec(html)) !== null) {
+    const noscriptContent = noscriptMatch[1];
+    const decodedNoscript = decodeHtmlEntities(noscriptContent);
+    const found = decodedNoscript.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          console.log(`[EmailExtractor] Found email in noscript tag: ${email}`);
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  }
+  
+  // Extract emails from HTML comments
+  // Sample: <!-- Contact: info@company.com -->
+  const commentRegex = /<!--([\s\S]*?)-->/g;
+  let commentMatch;
+  while ((commentMatch = commentRegex.exec(html)) !== null) {
+    const commentContent = commentMatch[1];
+    const decodedComment = decodeHtmlEntities(commentContent);
+    const found = decodedComment.match(EMAIL_REGEX);
+    if (found) {
+      found.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          console.log(`[EmailExtractor] Found email in HTML comment: ${email}`);
+          emails.add(email.toLowerCase());
+        }
+      });
+    }
+  }
+  
+  // Check for Cloudflare email protection patterns
+  // Sample: <a href="/cdn-cgi/l/email-protection#..." data-cfemail="...">
+  const cfeMailPattern = /data-cfemail\s*=\s*["']([^"']+)["']/gi;
+  let cfMatch;
+  while ((cfMatch = cfeMailPattern.exec(html)) !== null) {
+    const decoded = decodeCloudflareEmail(cfMatch[1]);
+    if (decoded && isValidEmail(decoded.toLowerCase())) {
+      console.log(`[EmailExtractor] Found Cloudflare protected email: ${decoded}`);
+      emails.add(decoded.toLowerCase());
+    }
+  }
+  
+  console.log(`[EmailExtractor] Total emails extracted from HTML: ${emails.size}`);
   
   return emails;
 }
@@ -2323,153 +3277,78 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       methodsUsed.push(`platforms:${detectedPlatforms.join(',')}`);
     }
     
-    // Get platform-specific paths to scan
-    const platformPaths = getPlatformSpecificPaths(detectedPlatforms);
-    console.log(`[EmailExtractor] Adding ${platformPaths.length} platform-specific paths to scan`);
-    
-    console.log(`[EmailExtractor] Step 2: Scanning critical policy pages first (Terms of Service, Privacy Policy, etc.)...`);
-    const criticalPolicyUrls: string[] = [];
-    const addedPolicyPaths = new Set<string>();
-    
-    // Add Shopify-specific policy pages first for e-commerce sites
-    if (isEcommerceSite) {
-      for (const path of SHOPIFY_POLICY_PAGES) {
-        if (!addedPolicyPaths.has(path)) {
-          criticalPolicyUrls.push(`${baseUrl}${path}`);
-          addedPolicyPaths.add(path);
-        }
-      }
+    // Track all URLs that were checked for the new reporting fields
+    const urlsChecked: string[] = [rootUrl];
+    if (isUserUrlDifferentFromRoot) {
+      urlsChecked.push(userProvidedUrl);
     }
+    let scanQuality: 'thorough' | 'partial' | 'blocked' = 'thorough';
     
-    // Add platform-specific paths first (higher priority for detected platforms)
-    for (const path of platformPaths) {
-      if (!addedPolicyPaths.has(path)) {
-        criticalPolicyUrls.push(`${baseUrl}${path}`);
-        addedPolicyPaths.add(path);
-      }
-    }
+    // Step 2: Use new priority crawl system for efficient page scanning
+    console.log(`[EmailExtractor] Step 2: Starting priority-based crawl...`);
     
-    // Add general critical policy paths
-    for (const path of CRITICAL_POLICY_PATHS) {
-      if (!addedPolicyPaths.has(path)) {
-        criticalPolicyUrls.push(`${baseUrl}${path}`);
-        addedPolicyPaths.add(path);
-      }
-    }
-    
-    const policyScannedUrls = new Set<string>();
-    for (const policyUrl of criticalPolicyUrls.slice(0, 20)) {
-      if (policyScannedUrls.has(policyUrl)) continue;
-      policyScannedUrls.add(policyUrl);
+    // Create fetch wrapper function for crawlPriorityPages
+    const fetchForCrawl = async (url: string): Promise<{ html: string | null; emails: Set<string>; blocked?: BlockedStatus }> => {
+      const emails = new Set<string>();
+      let blocked: BlockedStatus | undefined;
       
       try {
-        console.log(`[EmailExtractor] Scanning critical policy page: ${policyUrl}`);
-        const html = await fetchPageWithBrowser(policyUrl, 4000, 'desktop', true);
-        
-        if (html) {
-          const emails = extractEmailsFromHtml(html);
-          if (emails.size > 0) {
-            console.log(`[EmailExtractor] Found ${emails.size} emails in policy page: ${policyUrl}`);
-            emails.forEach(e => allEmails.add(e));
-          } else {
-            const pageText = cheerio.load(html)('body').text();
-            combinedTextForAI += '\n\n--- Policy Page: ' + policyUrl + ' ---\n' + pageText;
-            const aiEmails = await analyzeWithAI(pageText, domain);
-            aiEmails.forEach(e => allEmails.add(e));
-            if (aiEmails.size > 0) {
-              console.log(`[EmailExtractor] AI found ${aiEmails.size} emails in policy page: ${policyUrl}`);
-            }
-          }
-          pagesScanned++;
-        }
-      } catch (err: any) {
-        console.log(`[EmailExtractor] Failed to scan policy page ${policyUrl}: ${err.message}`);
-      }
-    }
-    
-    console.log(`[EmailExtractor] After policy pages: found ${allEmails.size} emails so far`);
-    
-    console.log(`[EmailExtractor] Step 3: Scanning other priority contact paths...`);
-    const allPriorityUrls: string[] = [];
-    for (const path of PRIORITY_CONTACT_PATHS) {
-      allPriorityUrls.push(`${baseUrl}${path}`);
-    }
-    
-    const pageLinks = extractLinksFromHtml(rootHtml, baseUrl);
-    const sitemapUrls = await fetchSitemap(baseUrl);
-    const contactLinks = findContactLinks([...pageLinks, ...sitemapUrls], baseUrl);
-    
-    const uniqueContactUrls = new Set<string>();
-    for (const url of allPriorityUrls) {
-      if (!policyScannedUrls.has(url)) {
-        uniqueContactUrls.add(url);
-      }
-    }
-    for (const url of contactLinks) {
-      if (!policyScannedUrls.has(url)) {
-        uniqueContactUrls.add(url);
-      }
-    }
-    uniqueContactUrls.delete(rootUrl);
-    uniqueContactUrls.delete(baseUrl);
-    if (isUserUrlDifferentFromRoot) {
-      uniqueContactUrls.delete(userProvidedUrl);
-    }
-    
-    console.log(`[EmailExtractor] Found ${uniqueContactUrls.size} additional contact/priority pages to scan`);
-    
-    const urlsToScan = Array.from(uniqueContactUrls).slice(0, 25);
-    
-    const scanPromises = urlsToScan.map(async (link) => {
-      try {
-        let html: string | null;
-        let mobileHtml: string | null = null;
-        let emails = new Set<string>();
-        
-        const shouldUseBrowser = usedBrowser || isEcommerceSite || isPolicyPage(link);
+        const shouldUseBrowser = usedBrowser || isEcommerceSite || isPolicyPage(url);
+        let html: string | null = null;
         
         if (shouldUseBrowser) {
-          const result = await fetchWithMobileFallback(link, 3000);
+          const result = await fetchWithMobileFallback(url, 4000);
           html = result.html;
-          mobileHtml = result.mobileHtml;
           result.emails.forEach(e => emails.add(e));
+          if (result.blocked?.isBlocked) {
+            blocked = result.blocked;
+          }
         } else {
-          html = await fetchPageSimple(link);
+          html = await fetchPageSimple(url);
           if (html) {
-            emails = extractEmailsFromHtml(html);
+            const foundEmails = extractEmailsFromHtml(html);
+            foundEmails.forEach(e => emails.add(e));
           }
           if (!html || emails.size === 0) {
-            const browserResult = await fetchWithMobileFallback(link, 3000);
+            const browserResult = await fetchWithMobileFallback(url, 3000);
             html = browserResult.html;
-            mobileHtml = browserResult.mobileHtml;
             browserResult.emails.forEach(e => emails.add(e));
+            if (browserResult.blocked?.isBlocked) {
+              blocked = browserResult.blocked;
+            }
           }
         }
         
+        // Also run AI analysis on pages with no emails
         if (html && emails.size === 0) {
-          let pageText = cheerio.load(html)('body').text();
-          if (mobileHtml) {
-            pageText += '\n\n' + cheerio.load(mobileHtml)('body').text();
-          }
+          const pageText = cheerio.load(html)('body').text();
           const aiPageEmails = await analyzeWithAI(pageText, domain);
           aiPageEmails.forEach(e => emails.add(e));
         }
         
-        if (emails.size > 0) {
-          console.log(`[EmailExtractor] ${link}: found ${emails.size} emails`);
-        }
-        return { link, emails: Array.from(emails), success: html !== null };
-      } catch (err: any) {
-        console.log(`[EmailExtractor] Failed to fetch ${link}: ${err.message}`);
-        return { link, emails: [], success: false };
+        return { html, emails, blocked };
+      } catch (error: any) {
+        console.log(`[EmailExtractor] Fetch error for ${url}: ${error.message}`);
+        return { html: null, emails, blocked };
       }
-    });
+    };
     
-    const results = await Promise.all(scanPromises);
-    results.forEach(result => {
-      if (result.success) pagesScanned++;
-      result.emails.forEach(email => allEmails.add(email));
-    });
+    // Perform priority-based crawl with max 15 pages
+    const crawlResult = await crawlPriorityPages(baseUrl, rootHtml, 15, fetchForCrawl);
+    
+    // Merge results from priority crawl
+    crawlResult.emails.forEach(e => allEmails.add(e));
+    pagesScanned += crawlResult.pagesScanned;
+    urlsChecked.push(...crawlResult.urlsChecked);
+    scanQuality = crawlResult.scanQuality;
+    combinedTextForAI += crawlResult.textContent;
+    
+    if (crawlResult.blocked?.isBlocked && !overallBlockedStatus?.isBlocked) {
+      overallBlockedStatus = crawlResult.blocked;
+    }
+    
+    console.log(`[EmailExtractor] After priority crawl: found ${allEmails.size} emails, scanned ${pagesScanned} pages, quality: ${scanQuality}`);
+    methodsUsed.push('priority_crawl');
     
     // If no emails found, try related domains (improved logic for country-code TLDs)
     if (allEmails.size === 0) {
@@ -2519,6 +3398,73 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       methodsUsed.push('mx_validation');
     }
     
+    // Calculate confidence scores and run SMTP verification
+    let emailsWithConfidence: EmailWithConfidence[] = [];
+    const emailsToVerify = validatedEmails.length > 0 ? validatedEmails : emailArray;
+    
+    if (emailsToVerify.length > 0) {
+      console.log(`[EmailExtractor] Calculating confidence scores for ${emailsToVerify.length} emails...`);
+      
+      // Calculate initial confidence scores
+      emailsWithConfidence = emailsToVerify.map(email => ({
+        email,
+        confidence: calculateEmailConfidence(email, rootUrl, domain),
+        source: rootUrl,
+        verified: undefined,
+        verificationStatus: undefined
+      }));
+      
+      // Run SMTP verification (with timeout protection)
+      console.log(`[EmailExtractor] Running SMTP verification for ${emailsToVerify.length} emails...`);
+      try {
+        const smtpResults = await Promise.race([
+          batchVerifyEmails(emailsToVerify),
+          new Promise<EmailVerificationResult[]>((resolve) => 
+            setTimeout(() => resolve([]), 30000)
+          )
+        ]);
+        
+        if (smtpResults.length > 0) {
+          methodsUsed.push('smtp_verification');
+          
+          // Merge SMTP results with confidence scores
+          const smtpResultMap = new Map<string, EmailVerificationResult>();
+          smtpResults.forEach(result => smtpResultMap.set(result.email.toLowerCase(), result));
+          
+          emailsWithConfidence = emailsWithConfidence.map(emailInfo => {
+            const smtpResult = smtpResultMap.get(emailInfo.email.toLowerCase());
+            if (smtpResult) {
+              // Adjust confidence based on SMTP verification
+              let adjustedConfidence = emailInfo.confidence;
+              if (smtpResult.status === 'valid') {
+                adjustedConfidence = Math.min(100, adjustedConfidence + 25);
+              } else if (smtpResult.status === 'invalid') {
+                adjustedConfidence = Math.max(0, adjustedConfidence - 40);
+              } else if (smtpResult.status === 'catch_all') {
+                adjustedConfidence = Math.min(100, adjustedConfidence + 10);
+              }
+              
+              return {
+                ...emailInfo,
+                confidence: adjustedConfidence,
+                verified: smtpResult.isValid,
+                verificationStatus: smtpResult.status
+              };
+            }
+            return emailInfo;
+          });
+          
+          console.log(`[EmailExtractor] SMTP verification complete: ${smtpResults.filter(r => r.isValid).length}/${smtpResults.length} verified as deliverable`);
+        }
+      } catch (smtpError: any) {
+        console.log(`[EmailExtractor] SMTP verification failed: ${smtpError.message}`);
+      }
+      
+      // Sort by confidence (highest first)
+      emailsWithConfidence.sort((a, b) => b.confidence - a.confidence);
+      console.log(`[EmailExtractor] Top email confidence: ${emailsWithConfidence[0]?.confidence || 0}`);
+    }
+    
     // Build extraction details with blocked status
     const extractionDetails: ExtractionResult['extractionDetails'] = {};
     if (overallBlockedStatus?.isBlocked) {
@@ -2528,10 +3474,21 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       console.log(`[EmailExtractor] Warning: Some pages were blocked - ${overallBlockedStatus.reason}`);
     }
     
+    console.log(`[EmailExtractor] Final results: ${emailArray.length} emails, ${pagesScanned} pages scanned, quality: ${scanQuality}`);
+    console.log(`[EmailExtractor] URLs checked: ${urlsChecked.length} unique URLs`);
+    
+    // Get final email list sorted by confidence
+    const finalEmails = emailsWithConfidence.length > 0 
+      ? emailsWithConfidence.map(e => e.email) 
+      : (validatedEmails.length > 0 ? validatedEmails : emailArray);
+    
     return {
-      emails: validatedEmails.length > 0 ? validatedEmails : emailArray,
+      emails: finalEmails,
       validatedEmails: validatedEmails,
+      emailsWithConfidence: emailsWithConfidence.length > 0 ? emailsWithConfidence : undefined,
       pagesScanned,
+      urlsChecked: [...new Set(urlsChecked)], // Deduplicate URLs
+      scanQuality,
       methods: methodsUsed,
       extractionDetails: Object.keys(extractionDetails).length > 0 ? extractionDetails : undefined,
     };
@@ -2541,6 +3498,8 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       emails: [],
       error: error.message || 'Failed to extract emails',
       pagesScanned: 0,
+      urlsChecked: [],
+      scanQuality: 'blocked',
       methods: [],
     };
   }
