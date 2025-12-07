@@ -26,7 +26,8 @@ const verificationCache = new Map<string, CacheEntry>();
 const catchAllCache = new Map<string, CatchAllCacheEntry>();
 const CACHE_TTL = 3600000;
 
-const SMTP_TIMEOUT = 5000;
+// Increased timeout for more reliable SMTP verification
+const SMTP_TIMEOUT = 8000;
 const SENDER_EMAIL = "verify@emailchecker.local";
 
 function generateRandomEmail(domain: string): string {
@@ -268,6 +269,7 @@ export async function verifyEmailSMTP(email: string): Promise<EmailVerificationR
     }
     
     let lastError = '';
+    let hadTimeout = false;
     for (const mxHost of mxRecords.slice(0, 2)) {
       try {
         console.log(`[EmailVerifier] Trying MX host: ${mxHost}`);
@@ -295,7 +297,8 @@ export async function verifyEmailSMTP(email: string): Promise<EmailVerificationR
           return result;
         } else if (smtpResult.status === 'timeout') {
           lastError = smtpResult.reason;
-          continue;
+          hadTimeout = true;
+          continue; // Try next MX host
         } else {
           lastError = smtpResult.reason;
         }
@@ -305,12 +308,14 @@ export async function verifyEmailSMTP(email: string): Promise<EmailVerificationR
       }
     }
     
+    // If all attempts timed out, keep with 'unknown' status (don't discard)
+    // This ensures emails aren't lost just because SMTP verification failed
     const result: EmailVerificationResult = {
       email: emailLower,
-      isValid: false,
-      status: mxRecords.length > 0 ? 'unknown' : 'invalid',
-      confidence: 40,
-      reason: lastError || 'Could not verify email'
+      isValid: hadTimeout ? true : false, // Keep timed-out emails as potentially valid
+      status: hadTimeout ? 'timeout' : (mxRecords.length > 0 ? 'unknown' : 'invalid'),
+      confidence: hadTimeout ? 45 : 40,
+      reason: hadTimeout ? 'SMTP verification timed out - email may still be valid' : (lastError || 'Could not verify email')
     };
     verificationCache.set(emailLower, { result, timestamp: Date.now() });
     return result;

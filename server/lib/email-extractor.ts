@@ -11,6 +11,10 @@ puppeteer.use(StealthPlugin());
 
 const resolveMx = promisify(dns.resolveMx);
 
+// Configuration constants for rendering and wait times
+const RENDER_WAIT_MS = 3000;
+const POST_RENDER_IDLE_MS = 2000;
+
 // Strengthened EMAIL_REGEX - rejects emails with spaces, invalid characters, multiple @, missing TLD
 const EMAIL_REGEX = /(?<![a-zA-Z0-9._%+-])([a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\.(?!png|jpg|jpeg|gif|svg|webp|ico|css|js)[a-zA-Z]{2,10})(?![a-zA-Z0-9._%+-])/g;
 
@@ -224,6 +228,32 @@ const PLACEHOLDER_CONTENT_PATTERNS = [
   /@(test|example|demo|sample|fake|placeholder)\./i,
 ];
 
+// Common English words that are incorrectly matched as TLDs
+// These cause false positives like "email@domain.com.subscribe" -> should be "email@domain.com"
+const INVALID_TLD_WORDS = new Set([
+  // Common action words that follow emails in text
+  'subscribe', 'unsubscribe', 'click', 'please', 'thank', 'thanks', 'welcome',
+  'register', 'signup', 'login', 'signin', 'logout', 'signout', 'submit',
+  'confirm', 'verify', 'activate', 'deactivate', 'enable', 'disable',
+  'update', 'change', 'changes', 'modify', 'edit', 'delete', 'remove',
+  'create', 'add', 'save', 'cancel', 'continue', 'proceed', 'next', 'back',
+  // Common content words
+  'items', 'products', 'orders', 'shipping', 'delivery', 'payment', 'payments',
+  'privacy', 'terms', 'policy', 'policies', 'contact', 'support', 'help',
+  'about', 'home', 'page', 'pages', 'section', 'sections', 'article', 'articles',
+  'blog', 'news', 'events', 'gallery', 'photos', 'images', 'videos', 'media',
+  // Common conjunctions and prepositions
+  'and', 'but', 'for', 'with', 'from', 'that', 'this', 'which', 'where', 'when',
+  'what', 'who', 'how', 'why', 'our', 'your', 'their', 'his', 'her', 'its',
+  'you', 'they', 'them', 'these', 'those', 'here', 'there', 'then', 'now',
+  // Common endings in sentences
+  'sign', 'today', 'now', 'free', 'more', 'less', 'best', 'first', 'last',
+  'new', 'old', 'good', 'great', 'nice', 'cool', 'awesome', 'amazing',
+  // Nigerian/business specific
+  'address', 'phone', 'email', 'website', 'whatsapp', 'instagram', 'facebook',
+  'twitter', 'linkedin', 'youtube', 'tiktok', 'snapchat', 'telegram',
+]);
+
 // Validation result interface
 export interface EmailValidationResult {
   valid: boolean;
@@ -297,6 +327,11 @@ export async function validateEmail(
   const tld = domainParts[domainParts.length - 1];
   if (!tld || tld.length < 2 || tld.length > 10 || !/^[a-z]+$/i.test(tld)) {
     return { valid: false, reason: 'Invalid TLD', confidence: 0 };
+  }
+  
+  // Check if TLD is actually a common English word (false positive protection)
+  if (INVALID_TLD_WORDS.has(tld.toLowerCase())) {
+    return { valid: false, reason: 'TLD is a common English word (likely false positive)', confidence: 0 };
   }
   
   // Check for domain starting/ending with dot or hyphen
@@ -441,24 +476,46 @@ export function validateEmailSync(
     return { valid: false, reason: 'Invalid TLD', confidence: 0 };
   }
   
-  // Check placeholder patterns
-  if (PLACEHOLDER_EMAIL_PREFIXES.has(localPart) || PLACEHOLDER_EMAIL_DOMAINS.has(domain)) {
-    return { valid: false, reason: 'Placeholder email detected', confidence: 0 };
-  }
-  
-  for (const pattern of PLACEHOLDER_CONTENT_PATTERNS) {
-    if (pattern.test(emailLower)) {
-      return { valid: false, reason: 'Placeholder email pattern detected', confidence: 0 };
-    }
-  }
-  
-  // Check disposable
-  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
-    return { valid: false, reason: 'Disposable email domain', confidence: 5 };
+  // Check if TLD is actually a common English word (false positive protection)
+  if (INVALID_TLD_WORDS.has(tld.toLowerCase())) {
+    return { valid: false, reason: 'TLD is a common English word (likely false positive)', confidence: 0 };
   }
   
   // Calculate confidence
   let confidence = 50;
+  
+  // Check placeholder patterns - reduce confidence instead of rejecting outright
+  // Only reject if BOTH local part AND domain match placeholder lists
+  const hasPlaceholderPrefix = PLACEHOLDER_EMAIL_PREFIXES.has(localPart);
+  const hasPlaceholderDomain = PLACEHOLDER_EMAIL_DOMAINS.has(domain);
+  
+  if (hasPlaceholderPrefix && hasPlaceholderDomain) {
+    // Both match - reject as it's definitely a placeholder
+    return { valid: false, reason: 'Placeholder email detected (both local and domain)', confidence: 0 };
+  } else if (hasPlaceholderPrefix) {
+    // Only prefix matches - reduce confidence by 30 but don't reject
+    confidence -= 30;
+    console.log(`[EmailValidator] Placeholder prefix detected for ${emailLower}, reducing confidence`);
+  } else if (hasPlaceholderDomain) {
+    // Only domain matches - reduce confidence by 30 but don't reject
+    confidence -= 30;
+    console.log(`[EmailValidator] Placeholder domain detected for ${emailLower}, reducing confidence`);
+  }
+  
+  // Check placeholder content patterns - reduce confidence instead of rejecting
+  for (const pattern of PLACEHOLDER_CONTENT_PATTERNS) {
+    if (pattern.test(emailLower)) {
+      confidence -= 30;
+      console.log(`[EmailValidator] Placeholder pattern detected for ${emailLower}, reducing confidence`);
+      break; // Only penalize once
+    }
+  }
+  
+  // Check disposable - reduce confidence instead of rejecting
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
+    confidence -= 40;
+    console.log(`[EmailValidator] Disposable domain detected for ${emailLower}, reducing confidence`);
+  }
   
   if (sourceDomain) {
     const cleanSourceDomain = sourceDomain.replace(/^www\./, '').toLowerCase();
@@ -605,6 +662,57 @@ function decodeBase64Email(encoded: string): string | null {
     }
   } catch {
     // Not valid Base64
+  }
+  
+  return null;
+}
+
+// Clean email by stripping invalid TLD-like suffixes
+// Example: "support@domain.com.subscribe" -> "support@domain.com"
+// Example: "support@domain.com.please" -> "support@domain.com"
+function cleanExtractedEmail(email: string): string | null {
+  if (!email) return null;
+  
+  let cleanEmail = email.toLowerCase().trim();
+  
+  // Remove leading garbage like "u003e" (encoded HTML entities that weren't decoded)
+  cleanEmail = cleanEmail.replace(/^u003e|^u003c|^\\u003e|^\\u003c/gi, '');
+  cleanEmail = cleanEmail.replace(/^[<>]+/, '');
+  
+  // Split into local and domain parts
+  const atIndex = cleanEmail.indexOf('@');
+  if (atIndex === -1) return null;
+  
+  const localPart = cleanEmail.substring(0, atIndex);
+  let domain = cleanEmail.substring(atIndex + 1);
+  
+  // Check if domain ends with an invalid TLD word and try to fix it
+  const domainParts = domain.split('.');
+  if (domainParts.length > 2) {
+    // Check if last part is an invalid TLD word
+    const lastPart = domainParts[domainParts.length - 1];
+    if (INVALID_TLD_WORDS.has(lastPart.toLowerCase())) {
+      // Try removing the invalid suffix
+      domainParts.pop();
+      domain = domainParts.join('.');
+      cleanEmail = `${localPart}@${domain}`;
+      console.log(`[EmailExtractor] Cleaned email: ${email} -> ${cleanEmail}`);
+    }
+    
+    // Check if second-to-last is also invalid (in case of multiple bad suffixes)
+    const newLastPart = domainParts[domainParts.length - 1];
+    if (newLastPart && INVALID_TLD_WORDS.has(newLastPart.toLowerCase()) && domainParts.length > 2) {
+      domainParts.pop();
+      domain = domainParts.join('.');
+      cleanEmail = `${localPart}@${domain}`;
+      console.log(`[EmailExtractor] Cleaned email again: -> ${cleanEmail}`);
+    }
+  }
+  
+  // Validate the cleaned email
+  const validation = validateEmailSync(cleanEmail);
+  if (validation.valid) {
+    return cleanEmail;
   }
   
   return null;
@@ -2070,8 +2178,21 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
       }
     }
     
-    const effectiveWait = isRetry ? waitTime + 3000 : waitTime;
+    // Use config constants for consistent wait times
+    const effectiveWait = isRetry ? waitTime + RENDER_WAIT_MS : waitTime;
     await new Promise(resolve => setTimeout(resolve, effectiveWait));
+    
+    // Wait for content to be meaningfully loaded (2500-4000ms post-navigation)
+    const postNavigationWait = isRetry ? 4000 : 2500;
+    await new Promise(resolve => setTimeout(resolve, postNavigationWait));
+    
+    // Ensure content is actually loaded before proceeding
+    await page.waitForFunction(() => document.body.innerText.length > 1000, { timeout: 5000 }).catch(() => {
+      console.log('[EmailExtractor] Content length check timed out, continuing anyway...');
+    });
+    
+    // Additional idle wait for any remaining JS execution
+    await new Promise(resolve => setTimeout(resolve, POST_RENDER_IDLE_MS));
     
     const initialHtml = await page.content();
     const spaFramework = detectSpaFramework(initialHtml);
@@ -2168,7 +2289,49 @@ async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: 
     const iframeEmails = await extractFromIframes(page);
     const shadowEmails = await extractFromShadowDOM(page);
     
-    console.log(`[EmailExtractor] Enhanced extraction: ${iframeEmails.size} iframe emails, ${shadowEmails.size} shadow DOM emails`);
+    // Comprehensive DOM harvesting for hidden emails
+    const domHarvestedEmails = await page.evaluate(() => {
+      const emails: string[] = [];
+      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+      
+      // Extract from all href, title, and data-* attributes
+      document.querySelectorAll('*').forEach(el => {
+        const attrs = el.attributes;
+        for (let i = 0; i < attrs.length; i++) {
+          const attr = attrs[i];
+          if (attr.name === 'href' || attr.name === 'title' || attr.name.startsWith('data-')) {
+            const matches = attr.value.match(emailRegex);
+            if (matches) emails.push(...matches);
+          }
+        }
+      });
+      
+      // Extract from all script tag contents
+      document.querySelectorAll('script').forEach(script => {
+        const content = script.textContent || '';
+        const matches = content.match(emailRegex);
+        if (matches) emails.push(...matches);
+      });
+      
+      // Extract from mailto: links (decoded)
+      document.querySelectorAll('a[href^="mailto:"]').forEach(link => {
+        const href = link.getAttribute('href') || '';
+        const decoded = decodeURIComponent(href.replace('mailto:', '').split('?')[0]);
+        if (decoded.includes('@')) {
+          emails.push(decoded);
+        }
+      });
+      
+      return [...new Set(emails)];
+    }).catch(() => [] as string[]);
+    
+    // Convert DOM harvested emails to Set
+    const domEmails = new Set<string>(domHarvestedEmails.map((e: string) => e.toLowerCase()));
+    
+    console.log(`[EmailExtractor] Enhanced extraction: ${iframeEmails.size} iframe emails, ${shadowEmails.size} shadow DOM emails, ${domEmails.size} DOM harvested emails`);
+    
+    // Merge DOM harvested emails with iframe and shadow emails
+    domEmails.forEach(e => iframeEmails.add(e));
     
     return { html, blocked, iframeEmails, shadowEmails };
   } catch (error: any) {
@@ -4371,6 +4534,28 @@ function isValidEmail(email: string, sourceDomain?: string): boolean {
   return result.valid;
 }
 
+// Validate and clean an email, returning the cleaned version if valid
+function validateAndCleanEmail(email: string, sourceDomain?: string): string | null {
+  if (!email) return null;
+  
+  // First try direct validation
+  const directResult = validateEmailSync(email, sourceDomain);
+  if (directResult.valid) {
+    return email.toLowerCase().trim();
+  }
+  
+  // If validation failed, try cleaning the email
+  const cleanedEmail = cleanExtractedEmail(email);
+  if (cleanedEmail) {
+    const cleanedResult = validateEmailSync(cleanedEmail, sourceDomain);
+    if (cleanedResult.valid) {
+      return cleanedEmail;
+    }
+  }
+  
+  return null;
+}
+
 function extractFooterLinks(html: string, baseUrl: string): string[] {
   const $ = cheerio.load(html);
   const footerLinks = new Set<string>();
@@ -4579,6 +4764,101 @@ async function scanRelatedDomain(relatedDomain: string, allEmails: Set<string>):
   }
   
   return { found: false, pagesScanned };
+}
+
+// Fetch and parse sitemap.xml for additional URLs to scan
+export async function fetchSitemapUrls(baseUrl: string): Promise<string[]> {
+  const urls: string[] = [];
+  const sitemapPaths = ['/sitemap.xml', '/sitemap_index.xml', '/sitemap1.xml'];
+  
+  for (const sitemapPath of sitemapPaths) {
+    try {
+      const sitemapUrl = `${baseUrl}${sitemapPath}`;
+      console.log(`[EmailExtractor] Fetching sitemap: ${sitemapUrl}`);
+      
+      const response = await fetch(sitemapUrl, {
+        headers: {
+          'User-Agent': getRandomUserAgent(),
+          'Accept': 'text/xml, application/xml, */*',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (!response.ok) continue;
+      
+      const xmlContent = await response.text();
+      
+      // Parse URLs from sitemap using regex (simpler than XML parsing)
+      const locMatches = xmlContent.match(/<loc>([^<]+)<\/loc>/g);
+      if (locMatches) {
+        for (const match of locMatches) {
+          const urlMatch = match.match(/<loc>([^<]+)<\/loc>/);
+          if (urlMatch && urlMatch[1]) {
+            const extractedUrl = urlMatch[1].trim();
+            // Filter to only contact/about pages for email extraction
+            if (extractedUrl.includes('contact') || 
+                extractedUrl.includes('about') || 
+                extractedUrl.includes('team') || 
+                extractedUrl.includes('company') ||
+                extractedUrl.includes('support')) {
+              urls.push(extractedUrl);
+            }
+          }
+        }
+      }
+      
+      console.log(`[EmailExtractor] Found ${urls.length} relevant URLs in sitemap`);
+      if (urls.length > 0) break; // Stop if we found URLs
+      
+    } catch (err: any) {
+      console.log(`[EmailExtractor] Sitemap fetch failed: ${err.message}`);
+    }
+  }
+  
+  // Limit to first 10 URLs to avoid excessive scanning
+  return urls.slice(0, 10);
+}
+
+// Check robots.txt for any email patterns
+export async function extractEmailsFromRobotsTxt(baseUrl: string): Promise<Set<string>> {
+  const emails = new Set<string>();
+  
+  try {
+    const robotsUrl = `${baseUrl}/robots.txt`;
+    console.log(`[EmailExtractor] Fetching robots.txt: ${robotsUrl}`);
+    
+    const response = await fetch(robotsUrl, {
+      headers: {
+        'User-Agent': getRandomUserAgent(),
+        'Accept': 'text/plain, */*',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    
+    if (!response.ok) {
+      return emails;
+    }
+    
+    const robotsContent = await response.text();
+    
+    // Extract any email patterns from robots.txt (some sites include contact info in comments)
+    const emailMatches = robotsContent.match(SIMPLE_EMAIL_REGEX);
+    if (emailMatches) {
+      for (const email of emailMatches) {
+        const normalizedEmail = email.toLowerCase().trim();
+        const validation = validateEmailSync(normalizedEmail);
+        if (validation.valid && validation.confidence >= 20) {
+          emails.add(normalizedEmail);
+          console.log(`[EmailExtractor] Found email in robots.txt: ${normalizedEmail}`);
+        }
+      }
+    }
+    
+  } catch (err: any) {
+    console.log(`[EmailExtractor] Robots.txt fetch failed: ${err.message}`);
+  }
+  
+  return emails;
 }
 
 export async function extractEmailsFromUrl(url: string): Promise<ExtractionResult> {
@@ -4871,8 +5151,21 @@ export async function extractEmailsFromUrl(url: string): Promise<ExtractionResul
       methodsUsed.push('pattern_generation');
     }
     
-    const emailArray = Array.from(allEmails);
-    console.log(`[EmailExtractor] Total: ${emailArray.length} unique emails from ${pagesScanned} pages`);
+    // Clean and validate all collected emails before processing
+    console.log(`[EmailExtractor] Cleaning ${allEmails.size} raw emails...`);
+    const cleanedEmails = new Set<string>();
+    for (const rawEmail of allEmails) {
+      const cleanedEmail = validateAndCleanEmail(rawEmail, domain);
+      if (cleanedEmail) {
+        cleanedEmails.add(cleanedEmail);
+      } else {
+        console.log(`[EmailExtractor] Rejected email: ${rawEmail}`);
+      }
+    }
+    console.log(`[EmailExtractor] ${cleanedEmails.size} emails passed cleaning (from ${allEmails.size} raw)`);
+    
+    const emailArray = Array.from(cleanedEmails);
+    console.log(`[EmailExtractor] Total: ${emailArray.length} unique cleaned emails from ${pagesScanned} pages`);
     console.log(`[EmailExtractor] Methods used: ${methodsUsed.join(', ')}`);
     
     // Validate emails with DNS MX record verification
