@@ -2551,20 +2551,6 @@ function extractEmailsFromHtml(html: string): Set<string> {
     }
   });
   
-  // Extract from HTML comments
-  const commentRegex = /<!--[\s\S]*?-->/g;
-  const comments = html.match(commentRegex) || [];
-  comments.forEach(comment => {
-    const found = comment.match(EMAIL_REGEX);
-    if (found) {
-      found.forEach(email => {
-        if (isValidEmail(email.toLowerCase())) {
-          emails.add(email.toLowerCase());
-        }
-      });
-    }
-  });
-  
   // Extract from inline scripts (not removed)
   const fullHtmlWithScripts = cheerio.load(html).html();
   const scriptContentRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
@@ -3053,7 +3039,14 @@ async function scanRelatedDomain(relatedDomain: string, allEmails: Set<string>):
     
     let html = await fetchPageSimple(relatedUrl);
     if (!html) {
-      html = await fetchPageWithBrowser(relatedUrl, 3000);
+      const result = await fetchPageWithBrowser(relatedUrl, 3000);
+      html = result.html;
+      if (result.iframeEmails) {
+        result.iframeEmails.forEach((e: string) => allEmails.add(e));
+      }
+      if (result.shadowEmails) {
+        result.shadowEmails.forEach((e: string) => allEmails.add(e));
+      }
     }
     
     if (html) {
@@ -3072,7 +3065,14 @@ async function scanRelatedDomain(relatedDomain: string, allEmails: Set<string>):
         try {
           let contactHtml = await fetchPageSimple(`https://${relatedDomain}${path}`);
           if (!contactHtml) {
-            contactHtml = await fetchPageWithBrowser(`https://${relatedDomain}${path}`, 2000);
+            const result = await fetchPageWithBrowser(`https://${relatedDomain}${path}`, 2000);
+            contactHtml = result.html;
+            if (result.iframeEmails) {
+              result.iframeEmails.forEach((e: string) => allEmails.add(e));
+            }
+            if (result.shadowEmails) {
+              result.shadowEmails.forEach((e: string) => allEmails.add(e));
+            }
           }
           
           if (contactHtml) {
