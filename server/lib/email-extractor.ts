@@ -1,8 +1,25 @@
 import * as cheerio from "cheerio";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import dns from "dns";
+import { promisify } from "util";
+
+// Add stealth plugin for better anti-bot bypass
+puppeteer.use(StealthPlugin());
+
+const resolveMx = promisify(dns.resolveMx);
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+// Disposable email domains blacklist
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'tempmail.com', 'throwaway.email', 'guerrillamail.com', 'mailinator.com',
+  '10minutemail.com', 'temp-mail.org', 'fakeinbox.com', 'getnada.com',
+  'maildrop.cc', 'yopmail.com', 'trashmail.com', 'sharklasers.com',
+  'dispostable.com', 'mailnesia.com', 'spamgourmet.com', 'mytrashmail.com',
+  'emailondeck.com', 'tempr.email', 'mohmal.com', 'tempail.com',
+]);
 
 const OBFUSCATED_PATTERNS = [
   /([a-zA-Z0-9._%+-]+)\s*\[\s*at\s*\]\s*([a-zA-Z0-9.-]+)\s*\[\s*dot\s*\]\s*([a-zA-Z]{2,})/gi,
@@ -443,6 +460,158 @@ export interface ExtractionResult {
   error?: string;
   pagesScanned?: number;
   methods?: string[];
+  validatedEmails?: string[];
+  extractionDetails?: {
+    blocked?: boolean;
+    blockedReason?: string;
+    suggestedAction?: string;
+  };
+}
+
+// MX record cache to avoid repeated DNS lookups
+const mxCache = new Map<string, { hasMx: boolean; timestamp: number }>();
+const MX_CACHE_TTL = 3600000; // 1 hour cache
+
+// Validate email domain has MX records
+async function validateEmailMx(email: string): Promise<boolean> {
+  try {
+    const domain = email.split('@')[1]?.toLowerCase();
+    if (!domain) return false;
+    
+    // Check cache first
+    const cached = mxCache.get(domain);
+    if (cached && Date.now() - cached.timestamp < MX_CACHE_TTL) {
+      return cached.hasMx;
+    }
+    
+    // Check for disposable email domains
+    if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
+      mxCache.set(domain, { hasMx: false, timestamp: Date.now() });
+      return false;
+    }
+    
+    // Perform MX lookup
+    const mxRecords = await resolveMx(domain);
+    const hasMx = mxRecords && mxRecords.length > 0;
+    mxCache.set(domain, { hasMx, timestamp: Date.now() });
+    return hasMx;
+  } catch (error: any) {
+    // DNS lookup failed - domain likely doesn't exist
+    console.log(`[EmailValidator] MX lookup failed for ${email}: ${error.message}`);
+    return false;
+  }
+}
+
+// Batch validate emails with MX records
+async function validateEmails(emails: string[]): Promise<string[]> {
+  const validEmails: string[] = [];
+  
+  // Group by domain to reduce DNS lookups
+  const byDomain = new Map<string, string[]>();
+  for (const email of emails) {
+    const domain = email.split('@')[1]?.toLowerCase();
+    if (domain) {
+      if (!byDomain.has(domain)) {
+        byDomain.set(domain, []);
+      }
+      byDomain.get(domain)!.push(email);
+    }
+  }
+  
+  // Validate each domain once
+  const validationPromises = Array.from(byDomain.entries()).map(async ([domain, domainEmails]) => {
+    // Check first email of each domain
+    const isValid = await validateEmailMx(domainEmails[0]);
+    if (isValid) {
+      return domainEmails;
+    }
+    return [];
+  });
+  
+  const results = await Promise.all(validationPromises);
+  results.forEach(emails => validEmails.push(...emails));
+  
+  return validEmails;
+}
+
+// Detect if page is blocked by anti-bot measures
+interface BlockedStatus {
+  isBlocked: boolean;
+  reason?: string;
+  suggestion?: string;
+}
+
+function detectBlockedPage(html: string, statusCode?: number): BlockedStatus {
+  const lowerHtml = html.toLowerCase();
+  
+  // Common bot detection/CAPTCHA indicators
+  const captchaPatterns = [
+    'captcha', 'recaptcha', 'hcaptcha', 'cloudflare', 'cf-challenge',
+    'challenge-running', 'ray-id', 'ddos-protection', 'bot-protection',
+    'access denied', 'please verify', 'are you a robot', 'human verification',
+    'security check', 'checking your browser', 'just a moment',
+    'enable javascript', 'javascript is required',
+  ];
+  
+  const isCaptcha = captchaPatterns.some(pattern => lowerHtml.includes(pattern));
+  
+  // Check for Cloudflare challenge page
+  const isCloudflare = lowerHtml.includes('cloudflare') && 
+    (lowerHtml.includes('checking your browser') || lowerHtml.includes('ray-id'));
+  
+  // Check for rate limiting
+  const isRateLimited = lowerHtml.includes('rate limit') || 
+    lowerHtml.includes('too many requests') || statusCode === 429;
+  
+  // Check for access denied
+  const isAccessDenied = lowerHtml.includes('403 forbidden') || 
+    lowerHtml.includes('access denied') || statusCode === 403;
+  
+  // Check for login required
+  const isLoginRequired = (lowerHtml.includes('login') || lowerHtml.includes('sign in')) &&
+    lowerHtml.includes('required');
+  
+  if (isCloudflare) {
+    return {
+      isBlocked: true,
+      reason: 'Cloudflare protection detected',
+      suggestion: 'The website uses Cloudflare protection. Try visiting the website directly and looking for contact information on their About or Contact page.'
+    };
+  }
+  
+  if (isCaptcha) {
+    return {
+      isBlocked: true,
+      reason: 'CAPTCHA verification required',
+      suggestion: 'The website requires human verification. Visit the website directly to find their contact email.'
+    };
+  }
+  
+  if (isRateLimited) {
+    return {
+      isBlocked: true,
+      reason: 'Rate limited by the website',
+      suggestion: 'Too many requests were made. Please try again in a few minutes.'
+    };
+  }
+  
+  if (isAccessDenied) {
+    return {
+      isBlocked: true,
+      reason: 'Access denied by the website',
+      suggestion: 'The website is blocking automated access. Try visiting directly to find contact info.'
+    };
+  }
+  
+  if (isLoginRequired) {
+    return {
+      isBlocked: true,
+      reason: 'Login required',
+      suggestion: 'This page requires authentication. Try the public contact or about pages instead.'
+    };
+  }
+  
+  return { isBlocked: false };
 }
 
 let browserInstance: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
@@ -465,9 +634,22 @@ function getBedrockClient(): BedrockRuntimeClient | null {
   return bedrockClient;
 }
 
+// Random user agents for better anti-bot bypass
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+];
+
+function getRandomUserAgent(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
 async function getBrowser() {
   if (!browserInstance || !browserInstance.isConnected()) {
-    console.log('[EmailExtractor] Launching browser...');
+    console.log('[EmailExtractor] Launching browser with stealth mode...');
     
     const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium';
     console.log(`[EmailExtractor] Using Chrome at: ${executablePath}`);
@@ -494,11 +676,118 @@ async function getBrowser() {
         '--no-first-run',
         '--safebrowsing-disable-auto-update',
         '--window-size=1920,1080',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
       ],
     });
-    console.log('[EmailExtractor] Browser launched successfully');
+    console.log('[EmailExtractor] Browser launched successfully with stealth');
   }
   return browserInstance;
+}
+
+// Extract emails from iframes on the page
+async function extractFromIframes(page: any): Promise<Set<string>> {
+  const emails = new Set<string>();
+  
+  try {
+    const frames = page.frames();
+    for (const frame of frames) {
+      try {
+        const frameContent = await frame.content();
+        const frameEmails = extractEmailsFromHtml(frameContent);
+        frameEmails.forEach(e => emails.add(e));
+      } catch {
+        // Frame might be cross-origin, skip
+      }
+    }
+  } catch (error) {
+    console.log('[EmailExtractor] Failed to extract from iframes');
+  }
+  
+  return emails;
+}
+
+// Extract emails from Shadow DOM elements
+async function extractFromShadowDOM(page: any): Promise<Set<string>> {
+  const emails = new Set<string>();
+  
+  try {
+    const shadowEmails = await page.evaluate(() => {
+      const emails: string[] = [];
+      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+      
+      function traverseShadowRoots(root: Document | ShadowRoot) {
+        const elements = root.querySelectorAll('*');
+        elements.forEach(el => {
+          // Check text content
+          const text = el.textContent || '';
+          const found = text.match(emailRegex);
+          if (found) emails.push(...found);
+          
+          // Check attributes
+          Array.from(el.attributes || []).forEach(attr => {
+            const attrMatch = attr.value.match(emailRegex);
+            if (attrMatch) emails.push(...attrMatch);
+          });
+          
+          // Recursively check shadow roots
+          if (el.shadowRoot) {
+            traverseShadowRoots(el.shadowRoot);
+          }
+        });
+      }
+      
+      traverseShadowRoots(document);
+      return emails;
+    });
+    
+    shadowEmails.forEach((email: string) => {
+      if (isValidEmail(email.toLowerCase())) {
+        emails.add(email.toLowerCase());
+      }
+    });
+  } catch (error) {
+    console.log('[EmailExtractor] Failed to extract from Shadow DOM');
+  }
+  
+  return emails;
+}
+
+// Wait for dynamic content to load with MutationObserver
+async function waitForDynamicContent(page: any, timeout: number = 5000): Promise<void> {
+  try {
+    await page.evaluate((timeout: number) => {
+      return new Promise<void>((resolve) => {
+        let lastMutationTime = Date.now();
+        const startTime = Date.now();
+        
+        const observer = new MutationObserver(() => {
+          lastMutationTime = Date.now();
+        });
+        
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          characterData: true
+        });
+        
+        // Check every 200ms if mutations have stopped
+        const checkInterval = setInterval(() => {
+          const now = Date.now();
+          // If no mutations for 1 second, or total timeout reached
+          if (now - lastMutationTime > 1000 || now - startTime > timeout) {
+            clearInterval(checkInterval);
+            observer.disconnect();
+            resolve();
+          }
+        }, 200);
+      });
+    }, timeout);
+  } catch {
+    // Fallback to simple wait
+    await new Promise(r => setTimeout(r, 2000));
+  }
 }
 
 type DeviceMode = 'desktop' | 'mobile';
@@ -533,17 +822,35 @@ function isShopifyOrEcommerce(html: string): boolean {
   return shopifyIndicators.some(indicator => html.includes(indicator));
 }
 
+interface FetchResult {
+  html: string | null;
+  blocked?: BlockedStatus;
+  iframeEmails?: Set<string>;
+  shadowEmails?: Set<string>;
+}
+
 async function fetchPageWithBrowser(url: string, waitTime: number = 3000, mode: DeviceMode = 'desktop', fullScroll: boolean = false, isRetry: boolean = false): Promise<string | null> {
   let page: any = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
     
-    const userAgent = mode === 'mobile' ? MOBILE_USER_AGENT : DESKTOP_USER_AGENT;
+    // Use random user agent for better anti-bot bypass
+    const userAgent = mode === 'mobile' ? MOBILE_USER_AGENT : getRandomUserAgent();
     const viewport = mode === 'mobile' ? MOBILE_VIEWPORT : DESKTOP_VIEWPORT;
     
     await page.setUserAgent(userAgent);
     await page.setViewport(viewport);
+    
+    // Set extra headers for more realistic requests
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+    });
     
     await page.setRequestInterception(true);
     page.on('request', (req: any) => {
