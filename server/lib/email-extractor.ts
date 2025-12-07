@@ -11,16 +11,468 @@ puppeteer.use(StealthPlugin());
 
 const resolveMx = promisify(dns.resolveMx);
 
-const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+// Strengthened EMAIL_REGEX - rejects emails with spaces, invalid characters, multiple @, missing TLD
+const EMAIL_REGEX = /(?<![a-zA-Z0-9._%+-])([a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\.(?!png|jpg|jpeg|gif|svg|webp|ico|css|js)[a-zA-Z]{2,10})(?![a-zA-Z0-9._%+-])/g;
 
-// Disposable email domains blacklist
+// Simple regex for backward compatibility in some functions
+const SIMPLE_EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+// Comprehensive disposable email domains blacklist (100+ domains)
 const DISPOSABLE_EMAIL_DOMAINS = new Set([
-  'tempmail.com', 'throwaway.email', 'guerrillamail.com', 'mailinator.com',
-  '10minutemail.com', 'temp-mail.org', 'fakeinbox.com', 'getnada.com',
-  'maildrop.cc', 'yopmail.com', 'trashmail.com', 'sharklasers.com',
-  'dispostable.com', 'mailnesia.com', 'spamgourmet.com', 'mytrashmail.com',
-  'emailondeck.com', 'tempr.email', 'mohmal.com', 'tempail.com',
+  // Popular temporary email services
+  'tempmail.com', 'temp-mail.org', 'temp-mail.io', 'temp-mail.net',
+  'throwaway.email', 'throwawaymail.com', 'throwaway.com',
+  'guerrillamail.com', 'guerrillamail.net', 'guerrillamail.org', 'guerrilla.email',
+  'mailinator.com', 'mailinator2.com', 'mailinator.net', 'mailinator.org',
+  '10minutemail.com', '10minutemail.net', '10minutemail.org', '10minmail.com',
+  'fakeinbox.com', 'fake-inbox.com', 'fakemailgenerator.com',
+  'getnada.com', 'getnada.cc', 'nada.email',
+  'maildrop.cc', 'maildrop.ml', 'mailnull.com',
+  'yopmail.com', 'yopmail.fr', 'yopmail.net',
+  'trashmail.com', 'trashmail.net', 'trashmail.org', 'trash-mail.com',
+  'sharklasers.com', 'guerillamail.com',
+  'dispostable.com', 'disposablemail.com', 'disposable-email.ml',
+  'mailnesia.com', 'mailnesia.net',
+  'spamgourmet.com', 'spamgourmet.net',
+  'mytrashmail.com', 'mt2015.com',
+  'emailondeck.com', 'email-ondeck.com',
+  'tempr.email', 'tempr.email',
+  'mohmal.com', 'mohmal.tech',
+  'tempail.com', 'tempail.net',
+  // Additional popular services
+  'mailcatch.com', 'mailcatch.net',
+  'mintemail.com', 'mintemail.net',
+  'getairmail.com', 'airmail.cc',
+  'crazymailing.com', 'crazymailing.net',
+  'dropmail.me', 'dropmail.ml',
+  'instantemailaddress.com', 'instant-mail.de',
+  'emailfake.com', 'fakemailgenerator.net',
+  'burnermail.io', 'burner-mail.com',
+  'anonmail.de', 'anonymbox.com', 'anonymbox.de',
+  'tempinbox.com', 'tempinbox.co.uk',
+  'mailexpire.com', 'expire-email.com',
+  'spamex.com', 'spamfree24.org',
+  'harakirimail.com', 'hmamail.com',
+  'incognitomail.com', 'incognitomail.org',
+  'jetable.com', 'jetable.org',
+  'kasmail.com', 'keepmymail.com',
+  'klassmaster.com', 'klassmaster.net',
+  'mailforspam.com', 'spam4.me',
+  'mailhazard.com', 'mailhazard.us',
+  'mailtemp.net', 'mailtemp.org',
+  'meltmail.com', 'meltmail.net',
+  'opayq.com', 'safetymail.info',
+  'spambox.us', 'spambox.org',
+  'tmpmail.org', 'tmpmail.net',
+  'wegwerfmail.de', 'wegwerfmail.net',
+  '20minutemail.com', '20minutemail.it',
+  'deadaddress.com', 'deadfake.com',
+  'despammed.com', 'despam.it',
+  'disposableinbox.com', 'dispo.in',
+  'emailigo.de', 'emailsensei.com',
+  'emlpro.com', 'emlhub.com',
+  'fakemailgen.com', 'fakemail.net',
+  'fastacura.com', 'fast-mail.fr',
+  'filzmail.com', 'flyspam.com',
+  'getonemail.com', 'gishpuppy.com',
+  'guerrillamailblock.com', 'gotmail.net',
+  'haltospam.com', 'hotpop.com',
+  'imails.info', 'imail.com',
+  'inboxclean.com', 'inboxclean.org',
+  'inboxstore.me', 'incognitomail.net',
+  'ipoo.org', 'jetable.net',
+  'lookugly.com', 'lopl.co.cc',
+  'mailbucket.org', 'mailcatch.com',
+  'mailfreeonline.com', 'mailin8r.com',
+  'mailmoat.com', 'mailnull.com',
+  'mailscrap.com', 'mailseal.de',
+  'mailzilla.com', 'mailzilla.org',
+  'mierdamail.com', 'mintemail.com',
+  'mr-potatohead.com', 'mx0.wwwnew.eu',
+  'nomail.xl.cx', 'nospam4.us',
+  'nospamfor.us', 'nowmymail.com',
+  'otherinbox.com', 'ovpn.to',
+  'pjjkp.com', 'politikerclub.de',
+  'poofy.org', 'pookmail.com',
+  'privacy.net', 'privy-mail.com',
+  'proxymail.eu', 'rcpt.at',
+  'reallymymail.com', 'recursor.net',
+  'rppkn.com', 'safetypost.de',
+  'shiftmail.com', 'shortmail.net',
+  'sneakemail.com', 'sogetthis.com',
+  'soodo.com', 'spamcero.com',
+  'spamobox.com', 'spamspot.com',
+  'superrito.com', 'superstachel.de',
+  'suremail.info', 'teleworm.us',
+  'tempemailbox.com', 'tempemailbox.net',
+  'tempmailaddress.com', 'temporaryemail.net',
+  'temporaryinbox.com', 'thankyou2010.com',
+  'thisisnotmyrealemail.com', 'throwam.com',
+  'tilien.com', 'tittbit.in',
+  'tmailinator.com', 'tradermail.info',
+  'trash-amil.com', 'trash2009.com',
+  'trashymail.com', 'trashymail.net',
+  'trbvm.com', 'trickmail.net',
+  'tyldd.com', 'uggsrock.com',
+  'veryday.ch', 'veryday.eu',
+  'veryday.info', 'veryrealemail.com',
+  'viditag.com', 'wh4f.org',
+  'whyspam.me', 'wilemail.com',
+  'willselfdestruct.com', 'wimsg.com',
+  'wuzupmail.net', 'xagloo.com',
+  'xemaps.com', 'xents.com',
+  'xmaily.com', 'xoxy.net',
+  'yapped.net', 'yep.it',
+  'zoemail.net', 'zoemail.org',
+  // Recent additions
+  'tempsky.com', 'tempmailaddress.com',
+  'guerrillamail.biz', 'guerrillamail.de',
+  'spamfree.eu', 'spamfree24.de',
+  'mailsac.com', 'emailsensei.com',
 ]);
+
+// Known legitimate email providers (boosts confidence when domain matches)
+const KNOWN_EMAIL_PROVIDERS = new Set([
+  // Major providers
+  'gmail.com', 'googlemail.com',
+  'outlook.com', 'outlook.co.uk', 'outlook.fr', 'outlook.de',
+  'hotmail.com', 'hotmail.co.uk', 'hotmail.fr', 'hotmail.de', 'hotmail.it',
+  'yahoo.com', 'yahoo.co.uk', 'yahoo.fr', 'yahoo.de', 'yahoo.ca', 'yahoo.com.au',
+  'ymail.com', 'rocketmail.com',
+  'live.com', 'live.co.uk', 'live.fr',
+  'msn.com', 'passport.com',
+  'aol.com', 'aol.co.uk',
+  'icloud.com', 'me.com', 'mac.com',
+  'protonmail.com', 'proton.me', 'pm.me',
+  'zoho.com', 'zohomail.com',
+  'mail.com', 'email.com',
+  'gmx.com', 'gmx.net', 'gmx.de', 'gmx.at', 'gmx.ch',
+  'fastmail.com', 'fastmail.fm',
+  'tutanota.com', 'tutamail.com', 'tuta.io',
+  'yandex.com', 'yandex.ru', 'ya.ru',
+  'mail.ru', 'inbox.ru', 'list.ru', 'bk.ru',
+  'qq.com', '163.com', '126.com', 'sina.com',
+  'naver.com', 'daum.net', 'hanmail.net',
+  // Business email services
+  'office365.com', 'microsoftonline.com',
+  'amazonaws.com', 'googlegroups.com',
+  // Regional providers
+  'btinternet.com', 'virginmedia.com', 'sky.com',
+  'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net',
+  't-online.de', 'web.de', 'freenet.de', 'arcor.de',
+  'libero.it', 'virgilio.it', 'tiscali.it', 'alice.it',
+  'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net', 'charter.net',
+  'cox.net', 'earthlink.net', 'juno.com', 'bellsouth.net',
+  'shaw.ca', 'rogers.com', 'telus.net', 'sympatico.ca',
+  'bigpond.com', 'optusnet.com.au', 'telstra.com',
+  'rediffmail.com', 'sify.com',
+]);
+
+// Placeholder/fake email patterns to detect and reject
+const PLACEHOLDER_EMAIL_PREFIXES = new Set([
+  'test', 'testing', 'example', 'demo', 'sample', 'fake', 'dummy',
+  'your', 'youremail', 'yourname', 'yourmail', 'your-email', 'your_email',
+  'user', 'username', 'user1', 'user2', 'testuser',
+  'admin', 'administrator', 'root', 'webmaster', 'postmaster',
+  'name', 'email', 'mail', 'myemail', 'myname', 'firstname', 'lastname',
+  'someone', 'somebody', 'anyone', 'person', 'customer',
+  'john', 'jane', 'johndoe', 'janedoe', 'john.doe', 'jane.doe',
+  'xxx', 'yyy', 'zzz', 'abc', 'xyz', 'aaa', 'bbb', 'asdf', 'qwerty',
+  'null', 'none', 'empty', 'void', 'na', 'n/a', 'undefined',
+  'placeholder', 'temp', 'temporary', 'default',
+  'me', 'you', 'him', 'her', 'them', 'us',
+  'foo', 'bar', 'baz', 'foobar',
+]);
+
+// Placeholder/fake email domains to detect and reject
+const PLACEHOLDER_EMAIL_DOMAINS = new Set([
+  'example.com', 'example.org', 'example.net', 'example.edu',
+  'test.com', 'test.org', 'test.net', 'testing.com',
+  'domain.com', 'domain.org', 'domain.net',
+  'localhost', 'localhost.localdomain', '127.0.0.1',
+  'yoursite.com', 'yourdomain.com', 'yourcompany.com', 'yourwebsite.com',
+  'company.com', 'mycompany.com', 'business.com',
+  'website.com', 'mywebsite.com', 'site.com', 'mysite.com',
+  'email.com', 'mail.com', 'myemail.com', 'mymail.com',
+  'fake.com', 'fakeemail.com', 'fakemail.com',
+  'demo.com', 'sample.com', 'placeholder.com',
+  'null.com', 'void.com', 'none.com',
+  'invalid.com', 'invalid.email',
+  'nomail.com', 'no-email.com', 'noemail.com',
+  'sentry.io', 'wixpress.com', 'w3.org', 'schema.org',
+  'acme.com', 'contoso.com', 'fabrikam.com', 'adventure-works.com',
+]);
+
+// Patterns that indicate placeholder content (checked against full email)
+const PLACEHOLDER_CONTENT_PATTERNS = [
+  /^test\d*@/i,
+  /^user\d+@/i,
+  /^admin\d*@/i,
+  /^demo\d*@/i,
+  /^sample\d*@/i,
+  /^example\d*@/i,
+  /^your[._-]?email@/i,
+  /^your[._-]?name@/i,
+  /^name@company/i,
+  /^email@domain/i,
+  /^info@example/i,
+  /^contact@test/i,
+  /^[a-z]@[a-z]\./i, // Single letter local parts like a@b.com
+  /^\d+@\d+\./i, // All numbers
+  /^(x{2,}|y{2,}|z{2,})@/i, // Repeated x, y, or z
+  /noreply|no-reply|donotreply|do-not-reply/i,
+  /@(test|example|demo|sample|fake|placeholder)\./i,
+];
+
+// Validation result interface
+export interface EmailValidationResult {
+  valid: boolean;
+  reason?: string;
+  confidence: number;
+}
+
+// Comprehensive email validation function
+export async function validateEmail(
+  email: string,
+  sourceDomain?: string
+): Promise<EmailValidationResult> {
+  const emailLower = email.toLowerCase().trim();
+  
+  // Basic syntax validation
+  if (!emailLower || emailLower.length < 5 || emailLower.length > 254) {
+    return { valid: false, reason: 'Invalid email length', confidence: 0 };
+  }
+  
+  // Check for spaces
+  if (/\s/.test(emailLower)) {
+    return { valid: false, reason: 'Email contains spaces', confidence: 0 };
+  }
+  
+  // Check for multiple @ symbols
+  const atCount = (emailLower.match(/@/g) || []).length;
+  if (atCount !== 1) {
+    return { valid: false, reason: 'Invalid @ symbol count', confidence: 0 };
+  }
+  
+  // Split email into parts
+  const parts = emailLower.split('@');
+  if (parts.length !== 2) {
+    return { valid: false, reason: 'Invalid email format', confidence: 0 };
+  }
+  
+  const [localPart, domain] = parts;
+  
+  // Validate local part
+  if (!localPart || localPart.length < 1 || localPart.length > 64) {
+    return { valid: false, reason: 'Invalid local part', confidence: 0 };
+  }
+  
+  // Check for invalid characters in local part
+  if (!/^[a-zA-Z0-9._%+-]+$/.test(localPart)) {
+    return { valid: false, reason: 'Invalid characters in local part', confidence: 0 };
+  }
+  
+  // Check for dots at start/end of local part
+  if (localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) {
+    return { valid: false, reason: 'Invalid dot placement in local part', confidence: 0 };
+  }
+  
+  // Validate domain
+  if (!domain || !domain.includes('.')) {
+    return { valid: false, reason: 'Missing TLD in domain', confidence: 0 };
+  }
+  
+  // Check domain length
+  if (domain.length > 253) {
+    return { valid: false, reason: 'Domain too long', confidence: 0 };
+  }
+  
+  // Check for invalid characters in domain
+  if (!/^[a-zA-Z0-9.-]+$/.test(domain)) {
+    return { valid: false, reason: 'Invalid characters in domain', confidence: 0 };
+  }
+  
+  // Check TLD
+  const domainParts = domain.split('.');
+  const tld = domainParts[domainParts.length - 1];
+  if (!tld || tld.length < 2 || tld.length > 10 || !/^[a-z]+$/i.test(tld)) {
+    return { valid: false, reason: 'Invalid TLD', confidence: 0 };
+  }
+  
+  // Check for domain starting/ending with dot or hyphen
+  if (domain.startsWith('.') || domain.endsWith('.') || 
+      domain.startsWith('-') || domain.endsWith('-')) {
+    return { valid: false, reason: 'Invalid domain format', confidence: 0 };
+  }
+  
+  // Check for file extensions (not email addresses)
+  const invalidExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.map', '.ts', '.tsx', '.jsx', '.html', '.php', '.asp', '.pdf'];
+  if (invalidExtensions.some(ext => emailLower.endsWith(ext))) {
+    return { valid: false, reason: 'Email looks like a filename', confidence: 0 };
+  }
+  
+  // === PLACEHOLDER EMAIL DETECTION ===
+  
+  // Check placeholder prefix
+  if (PLACEHOLDER_EMAIL_PREFIXES.has(localPart)) {
+    return { valid: false, reason: 'Placeholder email prefix detected', confidence: 0 };
+  }
+  
+  // Check placeholder domain
+  if (PLACEHOLDER_EMAIL_DOMAINS.has(domain)) {
+    return { valid: false, reason: 'Placeholder email domain detected', confidence: 0 };
+  }
+  
+  // Check placeholder content patterns
+  for (const pattern of PLACEHOLDER_CONTENT_PATTERNS) {
+    if (pattern.test(emailLower)) {
+      return { valid: false, reason: 'Placeholder email pattern detected', confidence: 0 };
+    }
+  }
+  
+  // === DISPOSABLE EMAIL DETECTION ===
+  
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
+    return { valid: false, reason: 'Disposable email domain detected', confidence: 5 };
+  }
+  
+  // Also check partial matches for disposable domains
+  for (const disposableDomain of DISPOSABLE_EMAIL_DOMAINS) {
+    if (domain.endsWith('.' + disposableDomain)) {
+      return { valid: false, reason: 'Subdomain of disposable email domain', confidence: 5 };
+    }
+  }
+  
+  // === CONFIDENCE CALCULATION ===
+  
+  let confidence = 50; // Base confidence
+  
+  // Check if domain matches source website (high confidence boost)
+  if (sourceDomain) {
+    const cleanSourceDomain = sourceDomain.replace(/^www\./, '').toLowerCase();
+    if (domain === cleanSourceDomain || domain.endsWith('.' + cleanSourceDomain)) {
+      confidence += 30; // Strong match with source domain
+    } else if (cleanSourceDomain.includes(domain.split('.')[0])) {
+      confidence += 15; // Partial domain match
+    }
+  }
+  
+  // Check if it's a known email provider
+  if (KNOWN_EMAIL_PROVIDERS.has(domain)) {
+    confidence += 15; // Known provider
+  }
+  
+  // Check common legitimate email prefixes
+  const legitimatePrefixes = ['info', 'contact', 'support', 'help', 'hello', 'sales', 'team', 'office', 'admin', 'enquiry', 'enquiries', 'customerservice', 'service', 'feedback', 'press', 'media', 'marketing', 'hr', 'careers', 'jobs', 'legal', 'billing', 'accounts', 'orders', 'general'];
+  if (legitimatePrefixes.includes(localPart)) {
+    confidence += 10; // Common business email prefix
+  }
+  
+  // Reduce confidence for generic looking personal email prefixes with numbers
+  if (/^[a-z]+\d{3,}$/.test(localPart)) {
+    confidence -= 10; // e.g., john12345@
+  }
+  
+  // === MX RECORD VALIDATION ===
+  
+  try {
+    const hasMx = await validateEmailMx(emailLower);
+    if (!hasMx) {
+      return { valid: false, reason: 'Domain has no MX records', confidence: 10 };
+    }
+    confidence += 10; // Has valid MX records
+  } catch (error) {
+    // MX lookup failed, reduce confidence but don't reject
+    confidence -= 10;
+    console.log(`[EmailValidator] MX validation skipped for ${domain}: ${error}`);
+  }
+  
+  // Cap confidence at 100
+  confidence = Math.min(100, Math.max(0, confidence));
+  
+  return { valid: true, confidence };
+}
+
+// Quick synchronous validation (without MX check)
+export function validateEmailSync(
+  email: string,
+  sourceDomain?: string
+): { valid: boolean; reason?: string; confidence: number } {
+  const emailLower = email.toLowerCase().trim();
+  
+  // Basic syntax validation
+  if (!emailLower || emailLower.length < 5 || emailLower.length > 254) {
+    return { valid: false, reason: 'Invalid email length', confidence: 0 };
+  }
+  
+  // Check for spaces
+  if (/\s/.test(emailLower)) {
+    return { valid: false, reason: 'Email contains spaces', confidence: 0 };
+  }
+  
+  // Check for multiple @ symbols
+  const atCount = (emailLower.match(/@/g) || []).length;
+  if (atCount !== 1) {
+    return { valid: false, reason: 'Invalid @ symbol count', confidence: 0 };
+  }
+  
+  const parts = emailLower.split('@');
+  if (parts.length !== 2) {
+    return { valid: false, reason: 'Invalid email format', confidence: 0 };
+  }
+  
+  const [localPart, domain] = parts;
+  
+  if (!localPart || localPart.length < 1 || localPart.length > 64) {
+    return { valid: false, reason: 'Invalid local part', confidence: 0 };
+  }
+  
+  if (!/^[a-zA-Z0-9._%+-]+$/.test(localPart)) {
+    return { valid: false, reason: 'Invalid characters in local part', confidence: 0 };
+  }
+  
+  if (!domain || !domain.includes('.')) {
+    return { valid: false, reason: 'Missing TLD in domain', confidence: 0 };
+  }
+  
+  const domainParts = domain.split('.');
+  const tld = domainParts[domainParts.length - 1];
+  if (!tld || tld.length < 2 || tld.length > 10 || !/^[a-z]+$/i.test(tld)) {
+    return { valid: false, reason: 'Invalid TLD', confidence: 0 };
+  }
+  
+  // Check placeholder patterns
+  if (PLACEHOLDER_EMAIL_PREFIXES.has(localPart) || PLACEHOLDER_EMAIL_DOMAINS.has(domain)) {
+    return { valid: false, reason: 'Placeholder email detected', confidence: 0 };
+  }
+  
+  for (const pattern of PLACEHOLDER_CONTENT_PATTERNS) {
+    if (pattern.test(emailLower)) {
+      return { valid: false, reason: 'Placeholder email pattern detected', confidence: 0 };
+    }
+  }
+  
+  // Check disposable
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
+    return { valid: false, reason: 'Disposable email domain', confidence: 5 };
+  }
+  
+  // Calculate confidence
+  let confidence = 50;
+  
+  if (sourceDomain) {
+    const cleanSourceDomain = sourceDomain.replace(/^www\./, '').toLowerCase();
+    if (domain === cleanSourceDomain || domain.endsWith('.' + cleanSourceDomain)) {
+      confidence += 30;
+    }
+  }
+  
+  if (KNOWN_EMAIL_PROVIDERS.has(domain)) {
+    confidence += 15;
+  }
+  
+  return { valid: true, confidence: Math.min(100, confidence) };
+}
 
 const OBFUSCATED_PATTERNS = [
   // Original patterns
@@ -800,75 +1252,259 @@ interface BlockedStatus {
   isBlocked: boolean;
   reason?: string;
   suggestion?: string;
+  wafType?: 'cloudflare' | 'akamai' | 'sucuri' | 'incapsula' | 'aws_waf' | 'datadome' | 'perimeterx' | 'kasada' | 'shape' | 'unknown';
+  isRetryable?: boolean;
 }
 
-function detectBlockedPage(html: string, statusCode?: number): BlockedStatus {
+function detectBlockedPage(html: string, statusCode?: number, responseHeaders?: Record<string, string>): BlockedStatus {
   const lowerHtml = html.toLowerCase();
+  const headerStr = JSON.stringify(responseHeaders || {}).toLowerCase();
   
-  // Common bot detection/CAPTCHA indicators
-  const captchaPatterns = [
-    'captcha', 'recaptcha', 'hcaptcha', 'cloudflare', 'cf-challenge',
-    'challenge-running', 'ray-id', 'ddos-protection', 'bot-protection',
-    'access denied', 'please verify', 'are you a robot', 'human verification',
-    'security check', 'checking your browser', 'just a moment',
-    'enable javascript', 'javascript is required',
+  // ===== CLOUDFLARE DETECTION =====
+  const cloudflarePatterns = [
+    'cf-ray', '__cf_bm', 'cf_chl_opt', 'cf-challenge', 'cf_clearance',
+    'checking your browser before accessing', 'enable javascript and cookies to continue',
+    'attention required! | cloudflare', 'please complete the security check',
+    'ray id:', 'cloudflare ray id', 'performance & security by cloudflare',
+    'challenge-form', 'cf-browser-verification', 'cf_chl_prog',
+    '_cf_chl_opt', 'jschl_vc', 'jschl_answer', 'turnstile',
   ];
+  const hasCloudflareHeader = headerStr.includes('cf-ray') || headerStr.includes('cf-cache-status') || headerStr.includes('cloudflare');
+  const hasCloudflareContent = cloudflarePatterns.some(p => lowerHtml.includes(p));
+  const isCloudflareChallenge = hasCloudflareContent && (
+    lowerHtml.includes('just a moment') || 
+    lowerHtml.includes('checking your browser') ||
+    lowerHtml.includes('challenge-running') ||
+    lowerHtml.includes('please wait') ||
+    (lowerHtml.includes('cloudflare') && lowerHtml.includes('ray id'))
+  );
   
-  const isCaptcha = captchaPatterns.some(pattern => lowerHtml.includes(pattern));
-  
-  // Check for Cloudflare challenge page
-  const isCloudflare = lowerHtml.includes('cloudflare') && 
-    (lowerHtml.includes('checking your browser') || lowerHtml.includes('ray-id'));
-  
-  // Check for rate limiting
-  const isRateLimited = lowerHtml.includes('rate limit') || 
-    lowerHtml.includes('too many requests') || statusCode === 429;
-  
-  // Check for access denied
-  const isAccessDenied = lowerHtml.includes('403 forbidden') || 
-    lowerHtml.includes('access denied') || statusCode === 403;
-  
-  // Check for login required
-  const isLoginRequired = (lowerHtml.includes('login') || lowerHtml.includes('sign in')) &&
-    lowerHtml.includes('required');
-  
-  if (isCloudflare) {
+  if (isCloudflareChallenge) {
     return {
       isBlocked: true,
-      reason: 'Cloudflare protection detected',
-      suggestion: 'The website uses Cloudflare protection. Try visiting the website directly and looking for contact information on their About or Contact page.'
+      wafType: 'cloudflare',
+      reason: 'Cloudflare challenge page detected',
+      suggestion: 'The website uses Cloudflare protection. Try visiting the website directly and looking for contact information on their About or Contact page.',
+      isRetryable: false
     };
   }
+  
+  // ===== AKAMAI BOT MANAGER DETECTION =====
+  const akamaiPatterns = [
+    'akamai', 'ak_bmsc', '_abck', 'bm_sz', 'bm_sv', 'akam',
+    'akamaized', 'access denied - akamai', 'akamai ghost',
+    'bot manager', 'reference #', 'your request has been blocked',
+    'akamai technologies', 'edgekey', 'edgesuite',
+  ];
+  const isAkamai = akamaiPatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p)) &&
+    (lowerHtml.includes('access denied') || lowerHtml.includes('blocked') || statusCode === 403);
+  
+  if (isAkamai) {
+    return {
+      isBlocked: true,
+      wafType: 'akamai',
+      reason: 'Akamai Bot Manager detected',
+      suggestion: 'The website uses Akamai protection. Try visiting the website directly.',
+      isRetryable: true
+    };
+  }
+  
+  // ===== SUCURI WAF DETECTION =====
+  const sucuriPatterns = [
+    'sucuri', 'sucuri cloudproxy', 'sucuri website firewall',
+    'access denied - sucuri', 'blocked by sucuri',
+    'cloudproxy', 'sucuri inc', 'x-sucuri-id',
+  ];
+  const isSucuri = sucuriPatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p));
+  
+  if (isSucuri && (lowerHtml.includes('access denied') || lowerHtml.includes('blocked'))) {
+    return {
+      isBlocked: true,
+      wafType: 'sucuri',
+      reason: 'Sucuri WAF detected',
+      suggestion: 'The website uses Sucuri firewall protection.',
+      isRetryable: true
+    };
+  }
+  
+  // ===== INCAPSULA/IMPERVA DETECTION =====
+  const incapsulaPatterns = [
+    'incapsula', 'imperva', '_incap_', 'incap_ses', 'visid_incap',
+    'incapsula incident', 'blocked by incapsula', 'imperva inc',
+    'request unsuccessful', 'incap_id', 'reese84',
+  ];
+  const isIncapsula = incapsulaPatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p));
+  
+  if (isIncapsula) {
+    return {
+      isBlocked: true,
+      wafType: 'incapsula',
+      reason: 'Imperva/Incapsula WAF detected',
+      suggestion: 'The website uses Imperva protection.',
+      isRetryable: true
+    };
+  }
+  
+  // ===== AWS WAF DETECTION =====
+  const awsWafPatterns = [
+    'aws-waf', 'x-amzn-waf', 'awswaf', 'request blocked',
+    'request identifier', 'aws shield',
+  ];
+  const isAwsWaf = awsWafPatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p));
+  
+  if (isAwsWaf && statusCode === 403) {
+    return {
+      isBlocked: true,
+      wafType: 'aws_waf',
+      reason: 'AWS WAF detected',
+      suggestion: 'The website uses AWS Web Application Firewall.',
+      isRetryable: true
+    };
+  }
+  
+  // ===== DATADOME DETECTION =====
+  const datadomePatterns = [
+    'datadome', 'dd_s', 'dd_p', 'datadome.co',
+    'protected by datadome', 'datadome bot protection',
+  ];
+  const isDatadome = datadomePatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p));
+  
+  if (isDatadome) {
+    return {
+      isBlocked: true,
+      wafType: 'datadome',
+      reason: 'DataDome bot protection detected',
+      suggestion: 'The website uses DataDome protection.',
+      isRetryable: false
+    };
+  }
+  
+  // ===== PERIMETERX DETECTION =====
+  const perimeterxPatterns = [
+    'perimeterx', '_px', 'pxhd', 'px-captcha',
+    'human challenge', 'perimeterx bot defender', 'px-cdn',
+  ];
+  const isPerimeterX = perimeterxPatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p));
+  
+  if (isPerimeterX) {
+    return {
+      isBlocked: true,
+      wafType: 'perimeterx',
+      reason: 'PerimeterX bot protection detected',
+      suggestion: 'The website uses PerimeterX protection.',
+      isRetryable: false
+    };
+  }
+  
+  // ===== KASADA DETECTION =====
+  const kasadaPatterns = [
+    'kasada', 'cd-attempt', 'cd-wait', 'ips-cd-',
+  ];
+  const isKasada = kasadaPatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p));
+  
+  if (isKasada) {
+    return {
+      isBlocked: true,
+      wafType: 'kasada',
+      reason: 'Kasada bot protection detected',
+      suggestion: 'The website uses Kasada protection.',
+      isRetryable: false
+    };
+  }
+  
+  // ===== SHAPE SECURITY DETECTION =====
+  const shapePatterns = [
+    'shape security', 'f5.com', '_imp_apg', 
+  ];
+  const isShape = shapePatterns.some(p => lowerHtml.includes(p) || headerStr.includes(p));
+  
+  if (isShape && statusCode === 403) {
+    return {
+      isBlocked: true,
+      wafType: 'shape',
+      reason: 'Shape Security (F5) detected',
+      suggestion: 'The website uses F5 Shape Security protection.',
+      isRetryable: true
+    };
+  }
+  
+  // ===== GENERIC CAPTCHA/BOT DETECTION =====
+  const captchaPatterns = [
+    'captcha', 'recaptcha', 'hcaptcha', 'funcaptcha', 'geetest',
+    'are you a robot', 'human verification', 'bot verification',
+    'prove you are human', 'verify you are human', 'i am not a robot',
+    'security check', 'challenge-running', 'ddos-protection', 'bot-protection',
+    'please complete the security check', 'please verify you are a human',
+    'automated access to this page', 'suspicious activity',
+  ];
+  const isCaptcha = captchaPatterns.some(pattern => lowerHtml.includes(pattern));
   
   if (isCaptcha) {
     return {
       isBlocked: true,
-      reason: 'CAPTCHA verification required',
-      suggestion: 'The website requires human verification. Visit the website directly to find their contact email.'
+      wafType: 'unknown',
+      reason: 'CAPTCHA or bot verification required',
+      suggestion: 'The website requires human verification. Visit the website directly to find their contact email.',
+      isRetryable: false
     };
   }
+  
+  // ===== RATE LIMITING DETECTION =====
+  const rateLimitPatterns = [
+    'rate limit', 'too many requests', 'request limit exceeded',
+    'slow down', 'try again later', 'temporarily blocked',
+    'request rate exceeded', 'throttled',
+  ];
+  const isRateLimited = rateLimitPatterns.some(p => lowerHtml.includes(p)) || statusCode === 429;
   
   if (isRateLimited) {
     return {
       isBlocked: true,
       reason: 'Rate limited by the website',
-      suggestion: 'Too many requests were made. Please try again in a few minutes.'
+      suggestion: 'Too many requests were made. Please try again in a few minutes.',
+      isRetryable: true
     };
   }
   
-  if (isAccessDenied) {
+  // ===== ACCESS DENIED DETECTION =====
+  const accessDeniedPatterns = [
+    '403 forbidden', 'access denied', 'permission denied',
+    'you don\'t have permission', 'forbidden', 'not authorized',
+    'access to this resource', 'ip address has been blocked',
+  ];
+  const isAccessDenied = accessDeniedPatterns.some(p => lowerHtml.includes(p)) || statusCode === 403;
+  
+  if (isAccessDenied && html.length < 5000) {
     return {
       isBlocked: true,
       reason: 'Access denied by the website',
-      suggestion: 'The website is blocking automated access. Try visiting directly to find contact info.'
+      suggestion: 'The website is blocking automated access. Try visiting directly to find contact info.',
+      isRetryable: true
     };
   }
   
-  if (isLoginRequired) {
+  // ===== LOGIN REQUIRED DETECTION =====
+  const isLoginRequired = (
+    (lowerHtml.includes('login') || lowerHtml.includes('sign in') || lowerHtml.includes('log in')) &&
+    (lowerHtml.includes('required') || lowerHtml.includes('to continue') || lowerHtml.includes('to access'))
+  );
+  
+  if (isLoginRequired && html.length < 10000) {
     return {
       isBlocked: true,
       reason: 'Login required',
-      suggestion: 'This page requires authentication. Try the public contact or about pages instead.'
+      suggestion: 'This page requires authentication. Try the public contact or about pages instead.',
+      isRetryable: false
+    };
+  }
+  
+  // ===== EMPTY/MINIMAL CONTENT DETECTION =====
+  if (html.length < 500 && (statusCode === 403 || statusCode === 503 || statusCode === 429)) {
+    return {
+      isBlocked: true,
+      reason: `Blocked with status ${statusCode}`,
+      suggestion: 'The website appears to be blocking automated requests.',
+      isRetryable: true
     };
   }
   
@@ -895,17 +1531,208 @@ function getBedrockClient(): BedrockRuntimeClient | null {
   return bedrockClient;
 }
 
-// Random user agents for better anti-bot bypass
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+// Expanded user agents for better anti-bot bypass - modern browsers Dec 2024
+const DESKTOP_USER_AGENTS = [
+  // Chrome (Windows)
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  // Chrome (Mac)
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  // Firefox (Windows)
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0',
+  // Firefox (Mac)
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.0; rv:132.0) Gecko/20100101 Firefox/132.0',
+  // Safari (Mac)
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+  // Edge (Windows)
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
+  'Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
+  // Edge (Mac)
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
 ];
 
-function getRandomUserAgent(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+const MOBILE_USER_AGENTS = [
+  // iPhone Safari (iOS 17/18)
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+  // iPhone Chrome
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1',
+  // iPad Safari
+  'Mozilla/5.0 (iPad; CPU OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (iPad; CPU OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1',
+  // Android Chrome
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.81 Mobile Safari/537.36',
+  'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.81 Mobile Safari/537.36',
+  'Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36',
+  'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36',
+  // Android Samsung Browser
+  'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
+  // Android Firefox
+  'Mozilla/5.0 (Android 14; Mobile; rv:133.0) Gecko/133.0 Firefox/133.0',
+  'Mozilla/5.0 (Android 13; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0',
+];
+
+// Combined list for general use
+const ALL_USER_AGENTS = [...DESKTOP_USER_AGENTS, ...MOBILE_USER_AGENTS];
+
+function getRandomUserAgent(mobile?: boolean): string {
+  if (mobile === true) {
+    return MOBILE_USER_AGENTS[Math.floor(Math.random() * MOBILE_USER_AGENTS.length)];
+  }
+  if (mobile === false) {
+    return DESKTOP_USER_AGENTS[Math.floor(Math.random() * DESKTOP_USER_AGENTS.length)];
+  }
+  return ALL_USER_AGENTS[Math.floor(Math.random() * ALL_USER_AGENTS.length)];
+}
+
+// Request delay tracking per domain to avoid rate limiting
+const domainRequestTimestamps: Map<string, number> = new Map();
+const MIN_DELAY_MS = 1000; // Minimum 1 second between requests to same domain
+const MAX_DELAY_MS = 3000; // Maximum 3 seconds between requests
+const RATE_LIMIT_COOLDOWN_MS = 10000; // 10 second cooldown after rate limit
+
+function getDomainFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace('www.', '').toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+async function waitForDomainDelay(url: string, wasRateLimited: boolean = false): Promise<void> {
+  const domain = getDomainFromUrl(url);
+  const lastRequest = domainRequestTimestamps.get(domain);
+  const now = Date.now();
+  
+  if (lastRequest) {
+    const timeSinceLastRequest = now - lastRequest;
+    const requiredDelay = wasRateLimited ? RATE_LIMIT_COOLDOWN_MS : 
+      MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS);
+    
+    if (timeSinceLastRequest < requiredDelay) {
+      const waitTime = requiredDelay - timeSinceLastRequest;
+      console.log(`[AntiBot] Waiting ${Math.round(waitTime)}ms before request to ${domain}`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+  }
+  
+  domainRequestTimestamps.set(domain, Date.now());
+}
+
+function randomDelay(minMs: number = 500, maxMs: number = 1500): Promise<void> {
+  const delay = minMs + Math.random() * (maxMs - minMs);
+  return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+// Browser headers generator for realistic requests
+interface BrowserHeaders {
+  'User-Agent': string;
+  'Accept': string;
+  'Accept-Language': string;
+  'Accept-Encoding': string;
+  'Connection': string;
+  'Upgrade-Insecure-Requests': string;
+  'DNT'?: string;
+  'sec-ch-ua'?: string;
+  'sec-ch-ua-mobile'?: string;
+  'sec-ch-ua-platform'?: string;
+  'Sec-Fetch-Dest'?: string;
+  'Sec-Fetch-Mode'?: string;
+  'Sec-Fetch-Site'?: string;
+  'Sec-Fetch-User'?: string;
+  'Cache-Control'?: string;
+  'Pragma'?: string;
+}
+
+function generateBrowserHeaders(userAgent: string, options: { 
+  mobile?: boolean; 
+  variant?: 'chrome' | 'firefox' | 'safari' | 'edge';
+  referer?: string;
+} = {}): BrowserHeaders {
+  const isMobile = options.mobile ?? userAgent.includes('Mobile');
+  const isChrome = userAgent.includes('Chrome') && !userAgent.includes('Edg');
+  const isFirefox = userAgent.includes('Firefox');
+  const isSafari = userAgent.includes('Safari') && !userAgent.includes('Chrome');
+  const isEdge = userAgent.includes('Edg');
+  
+  const headers: BrowserHeaders = {
+    'User-Agent': userAgent,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'Accept-Language': 'en-US,en;q=0.9,en-GB;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br, zstd',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+  };
+  
+  // Add DNT randomly (some browsers have it on by default)
+  if (Math.random() > 0.5) {
+    headers['DNT'] = '1';
+  }
+  
+  // Add Cache-Control for fresh requests
+  if (Math.random() > 0.7) {
+    headers['Cache-Control'] = 'max-age=0';
+  }
+  
+  // Chrome/Edge specific headers
+  if (isChrome || isEdge) {
+    const chromeVersion = userAgent.match(/Chrome\/(\d+)/)?.[1] || '131';
+    const brandVersion = isEdge ? 'Microsoft Edge' : 'Google Chrome';
+    
+    headers['sec-ch-ua'] = `"${brandVersion}";v="${chromeVersion}", "Chromium";v="${chromeVersion}", "Not?A_Brand";v="24"`;
+    headers['sec-ch-ua-mobile'] = isMobile ? '?1' : '?0';
+    headers['sec-ch-ua-platform'] = isMobile 
+      ? (userAgent.includes('Android') ? '"Android"' : '"iOS"')
+      : (userAgent.includes('Windows') ? '"Windows"' : '"macOS"');
+    headers['Sec-Fetch-Dest'] = 'document';
+    headers['Sec-Fetch-Mode'] = 'navigate';
+    headers['Sec-Fetch-Site'] = 'none';
+    headers['Sec-Fetch-User'] = '?1';
+  }
+  
+  // Firefox specific headers  
+  if (isFirefox) {
+    headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8';
+    headers['Sec-Fetch-Dest'] = 'document';
+    headers['Sec-Fetch-Mode'] = 'navigate';
+    headers['Sec-Fetch-Site'] = 'none';
+    headers['Sec-Fetch-User'] = '?1';
+  }
+  
+  return headers;
+}
+
+// Alternative header sets for retry attempts
+const ALTERNATIVE_ACCEPT_LANGUAGES = [
+  'en-US,en;q=0.9',
+  'en-GB,en;q=0.9,en-US;q=0.8',
+  'en-AU,en;q=0.9,en-US;q=0.8,en-GB;q=0.7',
+  'en-CA,en;q=0.9,en-US;q=0.8',
+  'en;q=0.9',
+];
+
+function getAlternativeHeaders(attempt: number, mobile: boolean = false): BrowserHeaders {
+  const userAgent = getRandomUserAgent(mobile);
+  const headers = generateBrowserHeaders(userAgent, { mobile });
+  
+  // Vary Accept-Language based on attempt
+  headers['Accept-Language'] = ALTERNATIVE_ACCEPT_LANGUAGES[attempt % ALTERNATIVE_ACCEPT_LANGUAGES.length];
+  
+  return headers;
 }
 
 async function getBrowser() {
@@ -1469,33 +2296,227 @@ async function fetchWithMobileFallback(url: string, waitTime: number = 3000): Pr
   return { html: desktopHtml, mobileHtml: mobileHtmlResult, emails: allEmails, usedMobile, blocked: blockedStatus };
 }
 
-async function fetchPageSimple(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-      },
-      signal: AbortSignal.timeout(20000),
-      redirect: 'follow',
-    });
-    
-    if (!response.ok) return null;
-    
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/html') && !contentType.includes('text/plain') && !contentType.includes('application/xhtml')) {
-      return null;
+interface FetchResult {
+  html: string | null;
+  statusCode?: number;
+  headers?: Record<string, string>;
+  blocked?: BlockedStatus;
+}
+
+async function fetchPageSimple(url: string, options: {
+  maxRetries?: number;
+  useMobileOnRetry?: boolean;
+  skipDelays?: boolean;
+} = {}): Promise<string | null> {
+  const maxRetries = options.maxRetries ?? 4;
+  const useMobileOnRetry = options.useMobileOnRetry ?? true;
+  
+  let lastError: Error | null = null;
+  let wasRateLimited = false;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Wait for domain delay to avoid rate limiting (skip on first attempt if not rate limited)
+      if (attempt > 0 || wasRateLimited) {
+        if (!options.skipDelays) {
+          await waitForDomainDelay(url, wasRateLimited);
+        }
+      }
+      
+      // Select strategy based on attempt number
+      let headers: BrowserHeaders;
+      let strategyName: string;
+      
+      switch (attempt) {
+        case 0:
+          // First try: Normal desktop Chrome request
+          headers = generateBrowserHeaders(getRandomUserAgent(false), { mobile: false });
+          strategyName = 'desktop-chrome';
+          break;
+        case 1:
+          // Second try: Different user agent (Firefox or Safari)
+          const firefoxUA = DESKTOP_USER_AGENTS.find(ua => ua.includes('Firefox')) || getRandomUserAgent(false);
+          headers = generateBrowserHeaders(firefoxUA, { mobile: false });
+          strategyName = 'desktop-firefox';
+          break;
+        case 2:
+          // Third try: Mobile user agent
+          headers = generateBrowserHeaders(getRandomUserAgent(true), { mobile: true });
+          strategyName = 'mobile';
+          break;
+        case 3:
+        default:
+          // Fourth try: Different headers combination
+          headers = getAlternativeHeaders(attempt, Math.random() > 0.5);
+          strategyName = 'alternative-headers';
+          break;
+      }
+      
+      if (attempt > 0) {
+        console.log(`[AntiBot] Retry ${attempt}/${maxRetries - 1} for ${url} using ${strategyName} strategy`);
+        // Add small random delay between retries
+        await randomDelay(1000, 2500);
+      }
+      
+      const response = await fetch(url, {
+        headers: headers as unknown as HeadersInit,
+        signal: AbortSignal.timeout(25000),
+        redirect: 'follow',
+      });
+      
+      const statusCode = response.status;
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key.toLowerCase()] = value;
+      });
+      
+      // Handle rate limiting
+      if (statusCode === 429) {
+        wasRateLimited = true;
+        console.log(`[AntiBot] Rate limited on attempt ${attempt + 1}, will retry with cooldown`);
+        if (attempt < maxRetries - 1) {
+          await waitForDomainDelay(url, true);
+          continue;
+        }
+      }
+      
+      // Check content type
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/html') && !contentType.includes('text/plain') && !contentType.includes('application/xhtml')) {
+        console.log(`[AntiBot] Non-HTML content type: ${contentType}`);
+        return null;
+      }
+      
+      const html = await response.text();
+      
+      // Check if blocked by WAF/bot protection
+      const blockStatus = detectBlockedPage(html, statusCode, responseHeaders);
+      
+      if (blockStatus.isBlocked) {
+        console.log(`[AntiBot] Blocked: ${blockStatus.reason} (WAF: ${blockStatus.wafType || 'unknown'})`);
+        
+        // If retryable and we have attempts left, try again
+        if (blockStatus.isRetryable && attempt < maxRetries - 1) {
+          continue;
+        }
+        
+        // If blocked and not retryable or out of attempts, return null
+        if (!blockStatus.isRetryable) {
+          console.log(`[AntiBot] Non-retryable block, giving up`);
+          return null;
+        }
+      }
+      
+      // Success!
+      if (attempt > 0) {
+        console.log(`[AntiBot] Success on attempt ${attempt + 1} using ${strategyName}`);
+      }
+      
+      return html;
+      
+    } catch (error: any) {
+      lastError = error;
+      console.log(`[AntiBot] Fetch attempt ${attempt + 1} failed: ${error.message}`);
+      
+      // If timeout or network error, retry
+      if (attempt < maxRetries - 1) {
+        await randomDelay(1500, 3000);
+        continue;
+      }
     }
-    
-    return await response.text();
-  } catch (error: any) {
-    console.error(`[EmailExtractor] Simple fetch failed for ${url}:`, error.message);
-    return null;
   }
+  
+  console.error(`[EmailExtractor] All ${maxRetries} fetch attempts failed for ${url}:`, lastError?.message);
+  return null;
+}
+
+// Enhanced fetch with retry that returns full result including block status
+async function fetchPageWithRetry(url: string, options: {
+  maxRetries?: number;
+} = {}): Promise<FetchResult> {
+  const maxRetries = options.maxRetries ?? 4;
+  
+  let lastResult: FetchResult = { html: null };
+  let wasRateLimited = false;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Wait for domain delay
+      if (attempt > 0 || wasRateLimited) {
+        await waitForDomainDelay(url, wasRateLimited);
+      }
+      
+      // Select strategy based on attempt
+      let headers: BrowserHeaders;
+      
+      switch (attempt) {
+        case 0:
+          headers = generateBrowserHeaders(getRandomUserAgent(false), { mobile: false });
+          break;
+        case 1:
+          const firefoxUA = DESKTOP_USER_AGENTS.find(ua => ua.includes('Firefox')) || getRandomUserAgent(false);
+          headers = generateBrowserHeaders(firefoxUA);
+          break;
+        case 2:
+          headers = generateBrowserHeaders(getRandomUserAgent(true), { mobile: true });
+          break;
+        default:
+          headers = getAlternativeHeaders(attempt, Math.random() > 0.5);
+      }
+      
+      if (attempt > 0) {
+        console.log(`[AntiBot] Retry ${attempt}/${maxRetries - 1} for ${url}`);
+        await randomDelay(1000, 2000);
+      }
+      
+      const response = await fetch(url, {
+        headers: headers as unknown as HeadersInit,
+        signal: AbortSignal.timeout(25000),
+        redirect: 'follow',
+      });
+      
+      const statusCode = response.status;
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key.toLowerCase()] = value;
+      });
+      
+      if (statusCode === 429) {
+        wasRateLimited = true;
+        if (attempt < maxRetries - 1) {
+          await waitForDomainDelay(url, true);
+          continue;
+        }
+      }
+      
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/html') && !contentType.includes('text/plain') && !contentType.includes('application/xhtml')) {
+        return { html: null, statusCode, headers: responseHeaders };
+      }
+      
+      const html = await response.text();
+      const blocked = detectBlockedPage(html, statusCode, responseHeaders);
+      
+      lastResult = { html, statusCode, headers: responseHeaders, blocked };
+      
+      if (blocked.isBlocked) {
+        if (blocked.isRetryable && attempt < maxRetries - 1) {
+          continue;
+        }
+        return lastResult;
+      }
+      
+      return lastResult;
+      
+    } catch (error: any) {
+      console.log(`[AntiBot] Fetch attempt ${attempt + 1} failed: ${error.message}`);
+      if (attempt < maxRetries - 1) {
+        await randomDelay(1500, 2500);
+      }
+    }
+  }
+  
+  return lastResult;
 }
 
 // Get the brand/company name from a domain
@@ -1875,6 +2896,485 @@ function extractFromJavaScriptVariables(html: string): Set<string> {
     });
   }
   
+  return emails;
+}
+
+function extractFromJsonLd(html: string): Set<string> {
+  const emails = new Set<string>();
+  
+  try {
+    const $ = cheerio.load(html);
+    
+    $('script[type="application/ld+json"]').each((_, el) => {
+      try {
+        const jsonText = $(el).html();
+        if (!jsonText) return;
+        
+        const jsonData = JSON.parse(jsonText);
+        
+        const extractEmailsFromObject = (obj: any, depth: number = 0): void => {
+          if (depth > 10 || !obj || typeof obj !== 'object') return;
+          
+          if (Array.isArray(obj)) {
+            obj.forEach(item => extractEmailsFromObject(item, depth + 1));
+            return;
+          }
+          
+          const emailFields = [
+            'email', 'contactEmail', 'supportEmail', 'customerServiceEmail',
+            'senderEmail', 'replyTo', 'mail', 'e-mail', 'emailAddress'
+          ];
+          
+          for (const field of emailFields) {
+            if (obj[field] && typeof obj[field] === 'string') {
+              const email = obj[field].toLowerCase().trim();
+              if (isValidEmail(email)) {
+                console.log(`[EmailExtractor] JSON-LD extracted email from ${field}: ${email}`);
+                emails.add(email);
+              }
+            }
+          }
+          
+          if (obj.contactPoint) {
+            const contactPoints = Array.isArray(obj.contactPoint) ? obj.contactPoint : [obj.contactPoint];
+            contactPoints.forEach((cp: any) => {
+              if (cp?.email && typeof cp.email === 'string') {
+                const email = cp.email.toLowerCase().trim();
+                if (isValidEmail(email)) {
+                  console.log(`[EmailExtractor] JSON-LD contactPoint email: ${email}`);
+                  emails.add(email);
+                }
+              }
+              extractEmailsFromObject(cp, depth + 1);
+            });
+          }
+          
+          if (obj.author) {
+            const authors = Array.isArray(obj.author) ? obj.author : [obj.author];
+            authors.forEach((author: any) => {
+              if (author?.email && typeof author.email === 'string') {
+                const email = author.email.toLowerCase().trim();
+                if (isValidEmail(email)) {
+                  console.log(`[EmailExtractor] JSON-LD author email: ${email}`);
+                  emails.add(email);
+                }
+              }
+              extractEmailsFromObject(author, depth + 1);
+            });
+          }
+          
+          if (obj.publisher) {
+            const publishers = Array.isArray(obj.publisher) ? obj.publisher : [obj.publisher];
+            publishers.forEach((pub: any) => {
+              if (pub?.email && typeof pub.email === 'string') {
+                const email = pub.email.toLowerCase().trim();
+                if (isValidEmail(email)) {
+                  console.log(`[EmailExtractor] JSON-LD publisher email: ${email}`);
+                  emails.add(email);
+                }
+              }
+              extractEmailsFromObject(pub, depth + 1);
+            });
+          }
+          
+          if (obj.seller || obj.merchant || obj.provider || obj.creator) {
+            [obj.seller, obj.merchant, obj.provider, obj.creator].forEach(entity => {
+              if (entity) extractEmailsFromObject(entity, depth + 1);
+            });
+          }
+          
+          for (const key of Object.keys(obj)) {
+            if (typeof obj[key] === 'object' && obj[key] !== null) {
+              extractEmailsFromObject(obj[key], depth + 1);
+            }
+          }
+        };
+        
+        extractEmailsFromObject(jsonData);
+        
+      } catch (parseError) {
+      }
+    });
+    
+  } catch (error) {
+    console.log(`[EmailExtractor] JSON-LD extraction error: ${error}`);
+  }
+  
+  console.log(`[EmailExtractor] JSON-LD extraction found ${emails.size} emails`);
+  return emails;
+}
+
+function extractFromMicrodata(html: string): Set<string> {
+  const emails = new Set<string>();
+  
+  try {
+    const $ = cheerio.load(html);
+    
+    $('[itemprop="email"]').each((_, el) => {
+      const element = $(el);
+      const content = element.attr('content') || element.attr('href') || element.text();
+      if (content) {
+        let email = content.replace('mailto:', '').split('?')[0].toLowerCase().trim();
+        if (isValidEmail(email)) {
+          console.log(`[EmailExtractor] Microdata itemprop email: ${email}`);
+          emails.add(email);
+        }
+      }
+    });
+    
+    $('[itemtype*="schema.org/ContactPoint"], [itemtype*="schema.org/Organization"], [itemtype*="schema.org/Person"], [itemtype*="schema.org/LocalBusiness"]').each((_, el) => {
+      const element = $(el);
+      const text = element.text();
+      const found = text.match(EMAIL_REGEX);
+      if (found) {
+        found.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            console.log(`[EmailExtractor] Microdata schema.org element email: ${email}`);
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+      
+      element.find('[itemprop]').each((_, prop) => {
+        const propName = $(prop).attr('itemprop');
+        if (propName && /email|contact|mail/i.test(propName)) {
+          const value = $(prop).attr('content') || $(prop).attr('href') || $(prop).text();
+          if (value) {
+            let email = value.replace('mailto:', '').split('?')[0].toLowerCase().trim();
+            if (isValidEmail(email)) {
+              console.log(`[EmailExtractor] Microdata ${propName}: ${email}`);
+              emails.add(email);
+            }
+          }
+        }
+      });
+    });
+    
+    $('[itemscope]').each((_, el) => {
+      const element = $(el);
+      element.find('[itemprop*="email"], [itemprop*="mail"], [itemprop*="contact"]').each((_, prop) => {
+        const value = $(prop).attr('content') || $(prop).attr('href') || $(prop).text();
+        if (value) {
+          let email = value.replace('mailto:', '').split('?')[0].toLowerCase().trim();
+          if (isValidEmail(email)) {
+            emails.add(email);
+          }
+          const found = value.match(EMAIL_REGEX);
+          if (found) {
+            found.forEach(e => {
+              if (isValidEmail(e.toLowerCase())) {
+                emails.add(e.toLowerCase());
+              }
+            });
+          }
+        }
+      });
+    });
+    
+  } catch (error) {
+    console.log(`[EmailExtractor] Microdata extraction error: ${error}`);
+  }
+  
+  console.log(`[EmailExtractor] Microdata extraction found ${emails.size} emails`);
+  return emails;
+}
+
+function extractFromScriptData(html: string): Set<string> {
+  const emails = new Set<string>();
+  
+  try {
+    const statePatterns = [
+      /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/,
+      /window\.__PRELOADED_STATE__\s*=\s*(\{[\s\S]*?\});/,
+      /window\.__REDUX_STATE__\s*=\s*(\{[\s\S]*?\});/,
+      /window\.__NUXT__\s*=\s*(\{[\s\S]*?\});/,
+      /window\.__DATA__\s*=\s*(\{[\s\S]*?\});/,
+      /window\.pageData\s*=\s*(\{[\s\S]*?\});/,
+      /window\.initialData\s*=\s*(\{[\s\S]*?\});/,
+      /window\.appData\s*=\s*(\{[\s\S]*?\});/,
+      /window\.config\s*=\s*(\{[\s\S]*?\});/,
+      /__NEXT_DATA__.*?(\{[\s\S]*?\})<\/script>/,
+    ];
+    
+    for (const pattern of statePatterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        const foundEmails = match[1].match(EMAIL_REGEX) || [];
+        foundEmails.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            console.log(`[EmailExtractor] Script state data email: ${email}`);
+            emails.add(email.toLowerCase());
+          }
+        });
+        
+        try {
+          const jsonStr = match[1].replace(/undefined/g, 'null').replace(/'/g, '"');
+          const parsed = JSON.parse(jsonStr);
+          const extractFromParsed = (obj: any, depth: number = 0): void => {
+            if (depth > 8 || !obj || typeof obj !== 'object') return;
+            
+            if (Array.isArray(obj)) {
+              obj.forEach(item => extractFromParsed(item, depth + 1));
+              return;
+            }
+            
+            for (const key of Object.keys(obj)) {
+              if (/email|mail|contact/i.test(key) && typeof obj[key] === 'string') {
+                const email = obj[key].toLowerCase().trim();
+                if (isValidEmail(email)) {
+                  console.log(`[EmailExtractor] Parsed script data ${key}: ${email}`);
+                  emails.add(email);
+                }
+              } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                extractFromParsed(obj[key], depth + 1);
+              }
+            }
+          };
+          extractFromParsed(parsed);
+        } catch (parseError) {
+        }
+      }
+    }
+    
+    const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+    let scriptMatch;
+    while ((scriptMatch = scriptRegex.exec(html)) !== null) {
+      const scriptContent = scriptMatch[1];
+      
+      if (scriptContent.includes('application/ld+json')) continue;
+      
+      const jsonObjectPattern = /(?:var|let|const)\s+\w+\s*=\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/g;
+      let jsonMatch;
+      while ((jsonMatch = jsonObjectPattern.exec(scriptContent)) !== null) {
+        const foundEmails = jsonMatch[1].match(EMAIL_REGEX) || [];
+        foundEmails.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            console.log(`[EmailExtractor] Inline JSON variable email: ${email}`);
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+      
+      const emailPatterns = [
+        /"email"\s*:\s*"([^"]+)"/gi,
+        /'email'\s*:\s*'([^']+)'/gi,
+        /email\s*:\s*["']([^"']+@[^"']+)["']/gi,
+        /contactEmail\s*[:=]\s*["']([^"']+)["']/gi,
+        /supportEmail\s*[:=]\s*["']([^"']+)["']/gi,
+        /customerEmail\s*[:=]\s*["']([^"']+)["']/gi,
+      ];
+      
+      for (const pattern of emailPatterns) {
+        let match;
+        const patternCopy = new RegExp(pattern.source, pattern.flags);
+        while ((match = patternCopy.exec(scriptContent)) !== null) {
+          const email = match[1].toLowerCase().trim();
+          if (isValidEmail(email)) {
+            console.log(`[EmailExtractor] Script pattern email: ${email}`);
+            emails.add(email);
+          }
+        }
+      }
+    }
+    
+    const $ = cheerio.load(html);
+    $('*').each((_, el) => {
+      const attrs = $(el).attr();
+      if (!attrs) return;
+      
+      for (const [key, value] of Object.entries(attrs)) {
+        if (!key.startsWith('data-')) continue;
+        if (typeof value !== 'string') continue;
+        
+        const foundEmails = value.match(EMAIL_REGEX) || [];
+        foundEmails.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            console.log(`[EmailExtractor] data-* attribute ${key}: ${email}`);
+            emails.add(email.toLowerCase());
+          }
+        });
+        
+        if (value.startsWith('{') || value.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(value);
+            const extractFromJson = (obj: any): void => {
+              if (!obj || typeof obj !== 'object') return;
+              if (Array.isArray(obj)) {
+                obj.forEach(extractFromJson);
+                return;
+              }
+              for (const k of Object.keys(obj)) {
+                if (/email|mail/i.test(k) && typeof obj[k] === 'string' && isValidEmail(obj[k].toLowerCase())) {
+                  emails.add(obj[k].toLowerCase());
+                } else if (typeof obj[k] === 'object') {
+                  extractFromJson(obj[k]);
+                }
+              }
+            };
+            extractFromJson(parsed);
+          } catch {}
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.log(`[EmailExtractor] Script data extraction error: ${error}`);
+  }
+  
+  console.log(`[EmailExtractor] Script data extraction found ${emails.size} emails`);
+  return emails;
+}
+
+function extractFromContactPagePatterns(html: string): Set<string> {
+  const emails = new Set<string>();
+  
+  try {
+    const $ = cheerio.load(html);
+    
+    $('form').each((_, form) => {
+      const formEl = $(form);
+      const action = formEl.attr('action') || '';
+      const formHtml = formEl.html() || '';
+      const formText = formEl.text();
+      
+      const hasEmailInput = formEl.find('input[type="email"], input[name*="email"], input[id*="email"], input[placeholder*="email"]').length > 0;
+      const isContactForm = /contact|enquir|inquir|message|feedback|support/i.test(action) || 
+                            formEl.find('textarea').length > 0 ||
+                            /send.*message|contact.*us|get.*touch/i.test(formText);
+      
+      if (hasEmailInput || isContactForm) {
+        formEl.find('label').each((_, label) => {
+          const labelText = $(label).text();
+          const foundEmails = labelText.match(EMAIL_REGEX) || [];
+          foundEmails.forEach(email => {
+            if (isValidEmail(email.toLowerCase())) {
+              console.log(`[EmailExtractor] Contact form label email: ${email}`);
+              emails.add(email.toLowerCase());
+            }
+          });
+        });
+        
+        formEl.find('p, span, div').each((_, el) => {
+          const text = $(el).text();
+          if (/email.*:|contact.*:|reach.*:|write.*:/i.test(text)) {
+            const foundEmails = text.match(EMAIL_REGEX) || [];
+            foundEmails.forEach(email => {
+              if (isValidEmail(email.toLowerCase())) {
+                console.log(`[EmailExtractor] Contact form nearby text email: ${email}`);
+                emails.add(email.toLowerCase());
+              }
+            });
+          }
+        });
+        
+        const foundEmails = formHtml.match(EMAIL_REGEX) || [];
+        foundEmails.forEach(email => {
+          if (isValidEmail(email.toLowerCase())) {
+            console.log(`[EmailExtractor] Contact form content email: ${email}`);
+            emails.add(email.toLowerCase());
+          }
+        });
+      }
+    });
+    
+    const contactSelectors = [
+      '[class*="contact"]', '[id*="contact"]',
+      '[class*="email"]', '[id*="email"]',
+      '[class*="info"]', '[id*="info"]',
+      '[class*="reach"]', '[id*="reach"]',
+      '[class*="touch"]', '[id*="touch"]',
+      '[class*="enquir"]', '[id*="enquir"]',
+      '[class*="inquir"]', '[id*="inquir"]',
+      '.contact-info', '.contact-details', '.contact-section',
+      '.email-info', '.email-address', '.email-link',
+      '#contact-info', '#contact-details', '#contact-section',
+    ];
+    
+    $(contactSelectors.join(', ')).each((_, el) => {
+      const element = $(el);
+      const text = element.text();
+      const html = element.html() || '';
+      
+      const foundInText = text.match(EMAIL_REGEX) || [];
+      foundInText.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          console.log(`[EmailExtractor] Contact section text email: ${email}`);
+          emails.add(email.toLowerCase());
+        }
+      });
+      
+      element.find('a[href^="mailto:"]').each((_, link) => {
+        const href = $(link).attr('href') || '';
+        const email = href.replace('mailto:', '').split('?')[0].toLowerCase().trim();
+        if (isValidEmail(email)) {
+          console.log(`[EmailExtractor] Contact section mailto: ${email}`);
+          emails.add(email);
+        }
+      });
+    });
+    
+    const footerSelectors = [
+      'footer', '[class*="footer"]', '[id*="footer"]',
+      '[class*="bottom"]', '[id*="bottom"]',
+      '[class*="site-info"]', '[id*="site-info"]',
+      '.footer-contact', '.footer-info', '.footer-content',
+    ];
+    
+    $(footerSelectors.join(', ')).each((_, el) => {
+      const element = $(el);
+      const text = element.text();
+      
+      const foundEmails = text.match(EMAIL_REGEX) || [];
+      foundEmails.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          console.log(`[EmailExtractor] Footer section email: ${email}`);
+          emails.add(email.toLowerCase());
+        }
+      });
+      
+      element.find('a[href^="mailto:"]').each((_, link) => {
+        const href = $(link).attr('href') || '';
+        const email = href.replace('mailto:', '').split('?')[0].toLowerCase().trim();
+        if (isValidEmail(email)) {
+          console.log(`[EmailExtractor] Footer mailto: ${email}`);
+          emails.add(email);
+        }
+      });
+    });
+    
+    $('[class*="address"], [id*="address"], .vcard, .hcard, [itemtype*="PostalAddress"]').each((_, el) => {
+      const text = $(el).text();
+      const foundEmails = text.match(EMAIL_REGEX) || [];
+      foundEmails.forEach(email => {
+        if (isValidEmail(email.toLowerCase())) {
+          console.log(`[EmailExtractor] Address section email: ${email}`);
+          emails.add(email.toLowerCase());
+        }
+      });
+    });
+    
+    $('h1, h2, h3, h4, h5, h6').each((_, heading) => {
+      const headingText = $(heading).text().toLowerCase();
+      if (/contact|email|reach|touch|enquir|support/i.test(headingText)) {
+        const nextElements = $(heading).nextAll().slice(0, 5);
+        nextElements.each((_, el) => {
+          const text = $(el).text();
+          const foundEmails = text.match(EMAIL_REGEX) || [];
+          foundEmails.forEach(email => {
+            if (isValidEmail(email.toLowerCase())) {
+              console.log(`[EmailExtractor] Near contact heading email: ${email}`);
+              emails.add(email.toLowerCase());
+            }
+          });
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.log(`[EmailExtractor] Contact page pattern extraction error: ${error}`);
+  }
+  
+  console.log(`[EmailExtractor] Contact page patterns found ${emails.size} emails`);
   return emails;
 }
 
@@ -2763,6 +4263,24 @@ function extractEmailsFromHtml(html: string): Set<string> {
     }
   }
   
+  // === ENHANCED EXTRACTION METHODS ===
+  
+  // Extract from JSON-LD structured data
+  const jsonLdEmails = extractFromJsonLd(html);
+  jsonLdEmails.forEach(email => emails.add(email));
+  
+  // Extract from microdata (schema.org itemprop)
+  const microdataEmails = extractFromMicrodata(html);
+  microdataEmails.forEach(email => emails.add(email));
+  
+  // Extract from script state data (window.__INITIAL_STATE__, etc.)
+  const scriptDataEmails = extractFromScriptData(html);
+  scriptDataEmails.forEach(email => emails.add(email));
+  
+  // Deep scan for contact page patterns
+  const contactPageEmails = extractFromContactPagePatterns(html);
+  contactPageEmails.forEach(email => emails.add(email));
+  
   console.log(`[EmailExtractor] Total emails extracted from HTML: ${emails.size}`);
   
   return emails;
@@ -2847,42 +4365,10 @@ function decodeCloudflareEmail(encodedString: string): string | null {
   }
 }
 
-function isValidEmail(email: string): boolean {
-  if (!email || email.length < 5 || email.length > 254) return false;
-  
-  const lower = email.toLowerCase();
-  
-  const invalidExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.map', '.ts', '.tsx', '.jsx'];
-  if (invalidExtensions.some(ext => lower.endsWith(ext))) return false;
-  
-  const invalidPatterns = ['example.com', 'example.org', 'test.com', 'domain.com', 'yoursite.com', 'yourdomain.com', 'company.com', 'website.com', 'sentry.io', 'wixpress.com', 'w3.org', 'schema.org', 'placeholder', 'no-reply', 'noreply@', 'donotreply', 'localhost', '127.0.0.1', 'email@email', 'user@example', 'name@domain', 'sample@', 'test@test', 'abc@abc', 'yourcompany', 'youremail', 'email.com'];
-  if (invalidPatterns.some(pattern => lower.includes(pattern))) return false;
-  
-  const parts = email.split('@');
-  if (parts.length !== 2) return false;
-  
-  const [localPart, domain] = parts;
-  if (!localPart || !domain) return false;
-  if (localPart.length > 64) return false;
-  if (localPart.length < 1) return false;
-  
-  if (!domain.includes('.')) return false;
-  const domainParts = domain.split('.');
-  const tld = domainParts[domainParts.length - 1];
-  if (!tld || tld.length < 2 || tld.length > 10) return false;
-  
-  if (!/^[a-z]+$/i.test(tld)) return false;
-  
-  if (domain.startsWith('.') || domain.endsWith('.')) return false;
-  
-  const commonEmailDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'mail.com', 'protonmail.com', 'live.com', 'msn.com', 'ymail.com'];
-  for (const commonDomain of commonEmailDomains) {
-    if (domain.includes(commonDomain) && domain !== commonDomain) {
-      return false;
-    }
-  }
-  
-  return true;
+function isValidEmail(email: string, sourceDomain?: string): boolean {
+  // Use the new comprehensive validation (synchronous version for backward compatibility)
+  const result = validateEmailSync(email, sourceDomain);
+  return result.valid;
 }
 
 function extractFooterLinks(html: string, baseUrl: string): string[] {
