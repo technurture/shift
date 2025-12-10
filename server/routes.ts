@@ -324,7 +324,45 @@ export async function registerRoutes(
     }
   });
 
-  // Batch extraction endpoint - allows multiple URLs at once
+  // Helper function for controlled concurrent processing with proper concurrency limiting
+  async function processWithConcurrency<T, R>(
+    items: T[],
+    processor: (item: T) => Promise<R>,
+    concurrencyLimit: number
+  ): Promise<R[]> {
+    const results: (R | undefined)[] = new Array(items.length);
+    const executing = new Set<Promise<void>>();
+    
+    for (let i = 0; i < items.length; i++) {
+      const index = i;
+      const item = items[i];
+      
+      // Use definite assignment assertion since we assign promiseRef synchronously before async code runs
+      let promiseRef!: Promise<void>;
+      const promise = (async () => {
+        try {
+          results[index] = await processor(item);
+        } finally {
+          executing.delete(promiseRef);
+        }
+      })();
+      promiseRef = promise;
+      
+      executing.add(promise);
+      
+      // If we've hit the concurrency limit, wait for one to complete
+      if (executing.size >= concurrencyLimit) {
+        await Promise.race(executing);
+      }
+    }
+    
+    // Wait for all remaining to complete
+    await Promise.all(executing);
+    
+    return results.filter((r): r is R => r !== undefined);
+  }
+
+  // Batch extraction endpoint - allows multiple URLs at once with CONCURRENT processing
   app.post("/api/extract/batch", async (req, res) => {
     const userId = await getUserIdFromRequest(req);
     if (!userId) {
@@ -332,15 +370,18 @@ export async function registerRoutes(
     }
     
     try {
-      const { urls } = req.body;
+      const { urls, concurrency = 5 } = req.body;
       
       if (!urls || !Array.isArray(urls) || urls.length === 0) {
         return res.status(400).json({ error: "URLs array is required" });
       }
       
-      // Limit batch size
-      const maxBatchSize = 10;
+      // Increased batch size limit (up to 100 URLs)
+      const maxBatchSize = 100;
       const urlsToProcess = urls.slice(0, maxBatchSize);
+      
+      // Concurrency limit (max 10 parallel requests to avoid overwhelming)
+      const concurrencyLimit = Math.min(Math.max(1, concurrency), 10);
       
       // Check plan limits
       const limits = await storage.getUserPlanLimits(userId);
@@ -353,11 +394,10 @@ export async function registerRoutes(
         });
       }
       
-      const results: any[] = [];
       let totalEmailsFound = 0;
       
-      // Process URLs sequentially to avoid overwhelming the system
-      for (const url of urlsToProcess) {
+      // Process URLs concurrently with controlled parallelism
+      const processUrl = async (url: string) => {
         try {
           const result = await extractEmailsFromUrl(url);
           
@@ -372,12 +412,12 @@ export async function registerRoutes(
             totalEmailsFound += result.emails.length;
           }
           
-          results.push({
+          return {
             url,
             success: result.emails.length > 0,
             emailsFound: result.emails.length,
             extraction,
-          });
+          };
         } catch (error: any) {
           const extraction = await storage.createExtraction({
             userId,
@@ -386,15 +426,22 @@ export async function registerRoutes(
             emails: [],
           });
           
-          results.push({
+          return {
             url,
             success: false,
             emailsFound: 0,
             error: error.message,
             extraction,
-          });
+          };
         }
-      }
+      };
+      
+      // Execute with concurrency control
+      const results = await processWithConcurrency(
+        urlsToProcess,
+        processUrl,
+        concurrencyLimit
+      );
       
       // Update user stats
       if (totalEmailsFound > 0) {
@@ -405,10 +452,155 @@ export async function registerRoutes(
         processed: results.length,
         totalEmailsFound,
         results,
+        concurrencyUsed: concurrencyLimit,
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Batch extraction failed" });
     }
+  });
+
+  // Streaming batch extraction endpoint with Server-Sent Events for real-time progress
+  app.post("/api/extract/batch/stream", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    const { urls, concurrency = 5 } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: "URLs array is required" });
+    }
+    
+    // Setup SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    
+    const maxBatchSize = 100;
+    const urlsToProcess = urls.slice(0, maxBatchSize);
+    const concurrencyLimit = Math.min(Math.max(1, concurrency), 10);
+    
+    // Check plan limits
+    const limits = await storage.getUserPlanLimits(userId);
+    const planLimit = PLAN_LIMITS[limits.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
+    
+    if (limits.linksScanned + urlsToProcess.length > planLimit.links) {
+      res.write(`data: ${JSON.stringify({ 
+        type: 'error', 
+        error: `Link scan limit reached. You have ${planLimit.links - limits.linksScanned} scans remaining.`
+      })}\n\n`);
+      res.end();
+      return;
+    }
+    
+    res.write(`data: ${JSON.stringify({ 
+      type: 'start', 
+      total: urlsToProcess.length,
+      concurrency: concurrencyLimit 
+    })}\n\n`);
+    
+    let completed = 0;
+    let totalEmailsFound = 0;
+    const results: any[] = [];
+    const executing = new Set<Promise<void>>();
+    
+    const processUrl = async (url: string) => {
+      try {
+        const result = await extractEmailsFromUrl(url);
+        
+        const extraction = await storage.createExtraction({
+          userId,
+          url,
+          status: result.emails.length > 0 ? "success" : "failed",
+          emails: result.emails || [],
+        });
+        
+        if (result.emails.length > 0) {
+          totalEmailsFound += result.emails.length;
+        }
+        
+        completed++;
+        const progressResult = {
+          url,
+          success: result.emails.length > 0,
+          emailsFound: result.emails.length,
+          extraction,
+        };
+        results.push(progressResult);
+        
+        res.write(`data: ${JSON.stringify({ 
+          type: 'progress', 
+          completed,
+          total: urlsToProcess.length,
+          result: progressResult
+        })}\n\n`);
+        
+      } catch (error: any) {
+        const extraction = await storage.createExtraction({
+          userId,
+          url,
+          status: "failed",
+          emails: [],
+        });
+        
+        completed++;
+        const errorResult = {
+          url,
+          success: false,
+          emailsFound: 0,
+          error: error.message,
+          extraction,
+        };
+        results.push(errorResult);
+        
+        res.write(`data: ${JSON.stringify({ 
+          type: 'progress', 
+          completed,
+          total: urlsToProcess.length,
+          result: errorResult
+        })}\n\n`);
+      }
+    };
+    
+    // Process with proper concurrency control using Set
+    for (let i = 0; i < urlsToProcess.length; i++) {
+      const url = urlsToProcess[i];
+      
+      // Use definite assignment assertion since we assign promiseRef synchronously before async code runs
+      let promiseRef!: Promise<void>;
+      const promise = (async () => {
+        try {
+          await processUrl(url);
+        } finally {
+          executing.delete(promiseRef);
+        }
+      })();
+      promiseRef = promise;
+      
+      executing.add(promise);
+      
+      // If we've hit the concurrency limit, wait for one to complete
+      if (executing.size >= concurrencyLimit) {
+        await Promise.race(executing);
+      }
+    }
+    
+    await Promise.all(executing);
+    
+    // Update user stats
+    if (totalEmailsFound > 0) {
+      await storage.updateUserStats(userId, totalEmailsFound);
+    }
+    
+    res.write(`data: ${JSON.stringify({ 
+      type: 'complete', 
+      processed: results.length,
+      totalEmailsFound,
+      results
+    })}\n\n`);
+    res.end();
   });
 
   // Delete extraction
