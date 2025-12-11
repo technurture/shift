@@ -50,6 +50,8 @@ import {
   BarChart3,
   Crown,
   Store,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { api, type Extraction, type Stats } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -71,6 +73,8 @@ export default function Dashboard() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -325,6 +329,18 @@ export default function Dashboard() {
   }, [filteredExtractions]);
 
   const hasActiveFilters = searchQuery || statusFilter !== "all" || dateRange.from || dateRange.to;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, dateRange, sortBy]);
+
+  const totalPages = Math.ceil(filteredExtractions.length / itemsPerPage);
+  
+  const paginatedExtractions = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredExtractions.slice(startIndex, endIndex);
+  }, [filteredExtractions, currentPage, itemsPerPage]);
 
   const clearAllFilters = () => {
     setSearchQuery("");
@@ -782,7 +798,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                 )}
-                {filteredExtractions.map((result) => {
+                {paginatedExtractions.map((result) => {
                   const isExpanded = expandedRows.has(result.id);
                   const isSelected = selectedRows.has(result.id);
                   const hasEmails = result.emails.length > 0;
@@ -893,6 +909,50 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
+                
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-4 border-t border-border/30">
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-muted-foreground">
+                        Page {currentPage} of {totalPages} ({filteredExtractions.length} items)
+                      </span>
+                      <Select value={itemsPerPage.toString()} onValueChange={(v) => { setItemsPerPage(parseInt(v)); setCurrentPage(1); }}>
+                        <SelectTrigger className="w-[100px]" data-testid="select-items-per-page">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10 / page</SelectItem>
+                          <SelectItem value="25">25 / page</SelectItem>
+                          <SelectItem value="50">50 / page</SelectItem>
+                          <SelectItem value="100">100 / page</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage(p => p - 1)}
+                        data-testid="button-prev-page"
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Prev
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage(p => p + 1)}
+                        data-testid="button-next-page"
+                      >
+                        Next
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             </CardContent>

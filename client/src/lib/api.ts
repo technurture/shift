@@ -53,7 +53,21 @@ export interface ShopifyFindResult {
   success: boolean;
   stores: ShopifyStore[];
   totalFound: number;
+  searchId?: string;
   usage: ShopifyUsage;
+}
+
+export interface ShopifySearch {
+  id: string;
+  userId: string;
+  filters: {
+    language?: string;
+    currency?: string;
+    maxResults: number;
+  };
+  stores: ShopifyStore[];
+  totalFound: number;
+  searchedAt: string;
 }
 
 class ApiClient {
@@ -224,6 +238,16 @@ class ApiClient {
     return this.request<ShopifyFindResult>("/shopify/find", {
       method: "POST",
       body: JSON.stringify(params),
+    });
+  }
+
+  async getShopifySearches() {
+    return this.request<ShopifySearch[]>("/shopify/searches");
+  }
+
+  async deleteShopifySearch(id: string) {
+    return this.request<{ success: boolean }>(`/shopify/searches/${id}`, {
+      method: "DELETE",
     });
   }
 }

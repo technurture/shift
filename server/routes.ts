@@ -1108,12 +1108,32 @@ export async function registerRoutes(
 
       await storage.updateShopifyUsage(userId, result.totalFound);
 
+      // Save search to history
+      const savedSearch = await storage.createShopifySearch({
+        userId,
+        filters: {
+          language: language || undefined,
+          currency: currency || undefined,
+          maxResults: requestedResults,
+        },
+        stores: result.stores.map(store => ({
+          id: store.id,
+          title: store.title,
+          url: store.url,
+          emails: store.emails,
+          country: store.country,
+          currency: store.currency,
+        })),
+        totalFound: result.totalFound,
+      });
+
       const newUsedToday = usedToday + result.totalFound;
 
       res.json({
         success: true,
         stores: result.stores,
         totalFound: result.totalFound,
+        searchId: savedSearch.id,
         usage: {
           usedToday: newUsedToday,
           dailyLimit: limit,
@@ -1123,6 +1143,36 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[ShopifyAPI] Error:", error);
       res.status(500).json({ error: error.message || "Failed to find Shopify stores" });
+    }
+  });
+
+  // Get Shopify search history
+  app.get("/api/shopify/searches", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const searches = await storage.getShopifySearchesByUser(userId);
+      res.json(searches);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get search history" });
+    }
+  });
+
+  // Delete a Shopify search from history
+  app.delete("/api/shopify/searches/:id", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      await storage.deleteShopifySearch(req.params.id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete search" });
     }
   });
 

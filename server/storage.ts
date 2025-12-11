@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "./db";
-import type { User, InsertUser, Extraction, InsertExtraction } from "@shared/schema";
+import type { User, InsertUser, Extraction, InsertExtraction, ShopifySearch, InsertShopifySearch } from "@shared/schema";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -22,6 +22,10 @@ export interface IStorage {
   
   getShopifyUsageToday(userId: string): Promise<number>;
   updateShopifyUsage(userId: string, storesUsed: number): Promise<void>;
+  
+  createShopifySearch(search: InsertShopifySearch): Promise<ShopifySearch>;
+  getShopifySearchesByUser(userId: string): Promise<ShopifySearch[]>;
+  deleteShopifySearch(id: string, userId: string): Promise<void>;
 }
 
 export class MongoStorage implements IStorage {
@@ -254,6 +258,41 @@ export class MongoStorage implements IStorage {
         }
       );
     }
+  }
+
+  async createShopifySearch(search: InsertShopifySearch): Promise<ShopifySearch> {
+    const { shopifySearches } = await connectToDatabase();
+    const id = new ObjectId().toString();
+    const now = new Date();
+    
+    const searchDoc = {
+      _id: id,
+      ...search,
+      searchedAt: now,
+    };
+    
+    await shopifySearches.insertOne(searchDoc);
+    
+    const { _id, ...rest } = searchDoc;
+    return { id: _id, ...rest } as ShopifySearch;
+  }
+
+  async getShopifySearchesByUser(userId: string): Promise<ShopifySearch[]> {
+    const { shopifySearches } = await connectToDatabase();
+    const docs = await shopifySearches
+      .find({ userId })
+      .sort({ searchedAt: -1 })
+      .toArray();
+    
+    return docs.map(doc => {
+      const { _id, ...rest } = doc;
+      return { id: _id, ...rest } as ShopifySearch;
+    });
+  }
+
+  async deleteShopifySearch(id: string, userId: string): Promise<void> {
+    const { shopifySearches } = await connectToDatabase();
+    await shopifySearches.deleteOne({ _id: id, userId });
   }
 }
 
