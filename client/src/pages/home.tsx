@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Check, Search, Zap, Shield, Globe, ArrowRight, Mail, Loader2, Send } from "lucide-react";
+import { Check, Search, Zap, Shield, Globe, ArrowRight, Mail, Loader2, Send, Store, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { api, type Stats } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -108,7 +108,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             <FeatureCard 
               icon={<Zap className="w-10 h-10 text-secondary" />}
               title="Lightning Fast"
@@ -123,6 +123,12 @@ export default function Home() {
               icon={<Search className="w-10 h-10 text-blue-400" />}
               title="Deep Search"
               description="We find emails hidden in obfuscated code, contact pages, and even linked social media profiles."
+            />
+            <FeatureCard 
+              icon={<Store className="w-10 h-10 text-green-400" />}
+              title="Shopify Store Finder"
+              description="NEW: Discover Shopify stores with verified emails. Perfect for B2B outreach and finding eCommerce partners."
+              isNew
             />
           </div>
         </div>
@@ -145,8 +151,18 @@ export default function Home() {
       <section id="pricing" className="py-24 px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-16">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30 text-red-400 text-sm font-bold mb-6"
+            >
+              <Sparkles className="w-4 h-4" />
+              LIMITED TIME PROMO - Up to 40% OFF
+              <Sparkles className="w-4 h-4" />
+            </motion.div>
             <h2 className="text-3xl md:text-4xl font-heading font-bold text-white mb-4">Simple, Transparent Pricing</h2>
-            <p className="text-muted-foreground">Start for free, upgrade as you grow.</p>
+            <p className="text-muted-foreground">Start for free, upgrade as you grow. Now with Shopify Store Finder!</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -156,34 +172,54 @@ export default function Home() {
               price="$0" 
               nairaPrice="Free"
               description="Perfect for testing the waters"
-              features={["500 Links Scanned", "500 Emails Extracted", "Standard Speed", "CSV Export"]}
+              features={["500 Links Scanned/day", "500 Emails Extracted/day", "Standard Speed", "CSV Export"]}
               cta="Start Free"
               variant="outline"
             />
 
-            {/* Basic Plan */}
+            {/* Basic Plan - PROMO */}
             <PricingCard 
               title="Basic" 
-              price="$50" 
-              nairaPrice="75,000 NGN"
+              price="$29" 
+              originalPrice="$50"
+              nairaPrice="45,000 NGN"
+              originalNairaPrice="75,000 NGN"
               period="/mo"
               description="For serious individual prospectors"
-              features={["1,000 Links Scanned", "1,000 Emails Extracted", "High Speed Priority", "CSV & JSON Export", "Email Support"]}
-              cta="Get Basic"
+              features={[
+                "1,000 Links Scanned/day",
+                "1,000 Emails Extracted/day",
+                "50 Shopify Stores/day",
+                "High Speed Priority",
+                "CSV & JSON Export",
+                "Email Support"
+              ]}
+              cta="Get Basic - Save 40%"
               popular
               variant="primary"
+              promo
             />
 
-            {/* Premium Plan */}
+            {/* Premium Plan - PROMO */}
             <PricingCard 
               title="Premium" 
-              price="$150" 
-              nairaPrice="225,000 NGN"
+              price="$99" 
+              originalPrice="$150"
+              nairaPrice="150,000 NGN"
+              originalNairaPrice="225,000 NGN"
               period="/mo"
               description="Powerhouse for sales teams"
-              features={["Unlimited Links", "Unlimited Emails", "Maximum Speed", "API Access", "Dedicated Support"]}
-              cta="Contact Sales"
+              features={[
+                "Unlimited Links/day",
+                "Unlimited Emails/day",
+                "Unlimited Shopify Stores/day",
+                "Maximum Speed",
+                "API Access",
+                "Dedicated Support"
+              ]}
+              cta="Get Premium - Save 34%"
               variant="outline"
+              promo
             />
           </div>
         </div>
@@ -197,9 +233,14 @@ export default function Home() {
   );
 }
 
-function FeatureCard({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) {
+function FeatureCard({ icon, title, description, isNew }: { icon: React.ReactNode, title: string, description: string, isNew?: boolean }) {
   return (
-    <div className="p-8 rounded-2xl bg-white/5 border border-white/5 hover:border-primary/30 hover:bg-white/10 transition-all duration-300 group">
+    <div className={`relative p-8 rounded-2xl bg-white/5 border hover:bg-white/10 transition-all duration-300 group ${isNew ? 'border-green-500/30 shadow-[0_0_30px_-10px_rgba(34,197,94,0.3)]' : 'border-white/5 hover:border-primary/30'}`}>
+      {isNew && (
+        <div className="absolute -top-3 right-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white px-3 py-0.5 rounded-full text-xs font-bold shadow-lg">
+          NEW
+        </div>
+      )}
       <div className="mb-6 p-3 bg-black/40 rounded-xl w-fit group-hover:scale-110 transition-transform duration-300">
         {icon}
       </div>
@@ -209,7 +250,7 @@ function FeatureCard({ icon, title, description }: { icon: React.ReactNode, titl
   );
 }
 
-function PricingCard({ title, price, nairaPrice, period = "", description, features, cta, popular, variant }: any) {
+function PricingCard({ title, price, originalPrice, nairaPrice, originalNairaPrice, period = "", description, features, cta, popular, variant, promo }: any) {
   return (
     <div className={`relative p-8 rounded-3xl border flex flex-col ${popular ? 'bg-white/5 border-primary shadow-[0_0_40px_-10px_rgba(124,58,237,0.3)]' : 'bg-background border-white/10'}`} data-testid={`card-pricing-${title.toLowerCase()}`}>
       {popular && (
@@ -217,11 +258,26 @@ function PricingCard({ title, price, nairaPrice, period = "", description, featu
           Most Popular
         </div>
       )}
+      {promo && !popular && (
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-red-500 to-orange-500 text-white px-4 py-1 rounded-full text-sm font-bold shadow-lg">
+          PROMO
+        </div>
+      )}
       <div className="mb-8">
         <h3 className="text-lg font-medium text-muted-foreground mb-2">{title}</h3>
         <div className="flex flex-col">
-          <span className="text-4xl font-bold text-white" data-testid={`text-price-usd-${title.toLowerCase()}`}>{price}</span>
-          <span className="text-lg font-semibold text-primary/80" data-testid={`text-price-ngn-${title.toLowerCase()}`}>{nairaPrice}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-4xl font-bold text-white" data-testid={`text-price-usd-${title.toLowerCase()}`}>{price}</span>
+            {originalPrice && (
+              <span className="text-xl text-muted-foreground line-through" data-testid={`text-original-price-usd-${title.toLowerCase()}`}>{originalPrice}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-semibold text-primary/80" data-testid={`text-price-ngn-${title.toLowerCase()}`}>{nairaPrice}</span>
+            {originalNairaPrice && (
+              <span className="text-sm text-muted-foreground line-through">{originalNairaPrice}</span>
+            )}
+          </div>
           {period && <span className="text-muted-foreground text-sm">{period}</span>}
         </div>
         <p className="text-sm text-muted-foreground mt-2">{description}</p>
