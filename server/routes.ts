@@ -98,19 +98,19 @@ export async function registerRoutes(
       const { email, password } = req.body;
       
       if (!email || !password) {
-        return res.status(400).json({ error: "Email and password required" });
+        return res.status(400).json({ error: "Please enter both your email address and password to sign in." });
       }
       
       // Get user
       const user = await storage.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "We couldn't find an account with that email address. Please check your email or sign up for a new account." });
       }
       
       // Check password
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "The password you entered is incorrect. Please try again or reset your password if you've forgotten it." });
       }
       
       // Set session for web
@@ -169,19 +169,19 @@ export async function registerRoutes(
       const { email, password } = req.body;
       
       if (!email || !password) {
-        return res.status(400).json({ error: "Email and password required" });
+        return res.status(400).json({ error: "Please enter both your email address and password to sign in." });
       }
       
       // Get user
       const user = await storage.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "We couldn't find an account with that email address. Please check your email or sign up for a new account." });
       }
       
       // Check password
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "The password you entered is incorrect. Please try again or reset your password if you've forgotten it." });
       }
       
       // Generate JWT token for mobile
