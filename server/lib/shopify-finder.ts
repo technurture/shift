@@ -68,11 +68,14 @@ export async function findShopifyStores(options: ShopifyFinderOptions): Promise<
 
     const run = await client.actor('xmiso_scrapers/shopify-shops-email-leads-scraper').call(input);
 
-    const { items } = await client.dataset(run.defaultDatasetId).listItems();
+    const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: options.maxResults });
 
-    console.log(`[ShopifyFinder] Found ${items.length} Shopify stores`);
+    console.log(`[ShopifyFinder] Requested ${options.maxResults} stores, received ${items.length} from API`);
 
-    const stores: ShopifyStore[] = items.map((item: any) => ({
+    // Ensure we only return the exact number requested
+    const limitedItems = items.slice(0, options.maxResults);
+
+    const stores: ShopifyStore[] = limitedItems.map((item: any) => ({
       id: item.id || item.shop_id || item.domain || '',
       title: item.title || item.name || item.shop_name || '',
       description: item.description || item.info || '',
