@@ -14,3 +14,12 @@ lerna-debug.log*
 .env
 .env.local
 .env.*.local
+
+./src/paystacktimeout.cjs
+.p
+logs/
+ormconfig.*
+dist/
+certbot
+resources/
+/paystacktimeout.cjs
