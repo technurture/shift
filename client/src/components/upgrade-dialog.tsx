@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Check, Crown, Zap, Shield } from "lucide-react";
+import { Loader2, Check, Crown, Zap, Shield, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,9 +22,12 @@ const plans = [
   {
     id: "basic",
     name: "Basic",
-    priceUsd: "$50",
-    priceNgn: "75,000 NGN",
+    priceUsd: "$29",
+    originalPriceUsd: "$50",
+    priceNgn: "45,000 NGN",
+    originalPriceNgn: "75,000 NGN",
     period: "/month",
+    discount: "40% OFF",
     features: [
       "1,000 Links Scanned",
       "1,000 Emails Extracted",
@@ -39,9 +42,12 @@ const plans = [
   {
     id: "premium",
     name: "Premium",
-    priceUsd: "$150",
-    priceNgn: "225,000 NGN",
+    priceUsd: "$99",
+    originalPriceUsd: "$150",
+    priceNgn: "150,000 NGN",
+    originalPriceNgn: "225,000 NGN",
     period: "/month",
+    discount: "34% OFF",
     features: [
       "Unlimited Links",
       "Unlimited Emails",
@@ -82,12 +88,19 @@ export function UpgradeDialog({ open, onOpenChange, currentPlan }: UpgradeDialog
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
+          <div className="flex items-center justify-center mb-3">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30">
+              <Sparkles className="w-4 h-4 text-red-400" />
+              <span className="text-red-400 text-sm font-bold">LIMITED TIME PROMO - Up to 40% OFF</span>
+              <Sparkles className="w-4 h-4 text-red-400" />
+            </div>
+          </div>
+          <DialogTitle className="flex items-center justify-center gap-2 text-xl">
             <Crown className="w-5 h-5 text-primary" />
             Upgrade Your Plan
           </DialogTitle>
-          <DialogDescription>
-            Choose a plan that fits your needs. Upgrade to unlock more features and higher limits.
+          <DialogDescription className="text-center">
+            Choose a plan that fits your needs. Special promo pricing ends December 31st, 2025!
           </DialogDescription>
         </DialogHeader>
 
@@ -131,13 +144,26 @@ export function UpgradeDialog({ open, onOpenChange, currentPlan }: UpgradeDialog
                 </div>
 
                 <div className="mb-4">
-                  <span className="text-3xl font-bold" data-testid={`text-price-${plan.id}`}>
-                    {plan.priceUsd}
-                  </span>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-3xl font-bold" data-testid={`text-price-${plan.id}`}>
+                      {plan.priceUsd}
+                    </span>
+                    <span className="text-lg text-muted-foreground line-through">
+                      {plan.originalPriceUsd}
+                    </span>
+                    <Badge className="bg-gradient-to-r from-red-500 to-orange-500 text-white text-xs">
+                      {plan.discount}
+                    </Badge>
+                  </div>
                   <span className="text-muted-foreground">{plan.period}</span>
-                  <p className="text-primary font-medium mt-1" data-testid={`text-price-ngn-${plan.id}`}>
-                    {plan.priceNgn}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-primary font-medium" data-testid={`text-price-ngn-${plan.id}`}>
+                      {plan.priceNgn}
+                    </span>
+                    <span className="text-sm text-muted-foreground line-through">
+                      {plan.originalPriceNgn}
+                    </span>
+                  </div>
                 </div>
 
                 <ul className="space-y-2 flex-1 mb-6">
@@ -166,7 +192,7 @@ export function UpgradeDialog({ open, onOpenChange, currentPlan }: UpgradeDialog
                   ) : isDowngrade ? (
                     "Downgrade not available"
                   ) : (
-                    `Upgrade to ${plan.name}`
+                    `Get ${plan.name} - Save ${plan.discount}`
                   )}
                 </Button>
               </div>
