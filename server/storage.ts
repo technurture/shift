@@ -19,6 +19,9 @@ export interface IStorage {
   getExtractionsByUser(userId: string): Promise<Extraction[]>;
   deleteExtraction(id: string, userId: string): Promise<void>;
   getUserPlanLimits(userId: string): Promise<{ plan: string; emailsExtracted: number; linksScanned: number }>;
+  
+  getShopifyUsageToday(userId: string): Promise<number>;
+  updateShopifyUsage(userId: string, storesUsed: number): Promise<void>;
 }
 
 export class MongoStorage implements IStorage {
@@ -51,6 +54,7 @@ export class MongoStorage implements IStorage {
       plan: "free",
       emailsExtracted: 0,
       linksScanned: 0,
+      shopifyStoresUsedToday: 0,
       isEmailVerified: false,
       createdAt: now,
     };
@@ -203,6 +207,53 @@ export class MongoStorage implements IStorage {
   async deleteExtraction(id: string, userId: string): Promise<void> {
     const { extractions } = await connectToDatabase();
     await extractions.deleteOne({ _id: id, userId });
+  }
+
+  async getShopifyUsageToday(userId: string): Promise<number> {
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    const lastResetDate = (user as any).shopifyLastResetDate;
+    
+    if (lastResetDate !== today) {
+      return 0;
+    }
+    
+    return (user as any).shopifyStoresUsedToday || 0;
+  }
+
+  async updateShopifyUsage(userId: string, storesUsed: number): Promise<void> {
+    const { users } = await connectToDatabase();
+    const today = new Date().toISOString().split('T')[0];
+    
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    
+    const lastResetDate = (user as any).shopifyLastResetDate;
+    
+    if (lastResetDate !== today) {
+      await users.updateOne(
+        { _id: userId },
+        { 
+          $set: { 
+            shopifyStoresUsedToday: storesUsed,
+            shopifyLastResetDate: today
+          } 
+        }
+      );
+    } else {
+      await users.updateOne(
+        { _id: userId },
+        { 
+          $inc: { shopifyStoresUsedToday: storesUsed }
+        }
+      );
+    }
   }
 }
 

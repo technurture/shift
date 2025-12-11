@@ -49,6 +49,7 @@ import {
   Link2,
   BarChart3,
   Crown,
+  Store,
 } from "lucide-react";
 import { api, type Extraction, type Stats } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -56,8 +57,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { UpgradeDialog, LimitReachedBanner } from "@/components/upgrade-dialog";
 import { AdBanner, AdPlaceholder, SponsoredContent } from "@/components/ads";
+import { ShopifyFinder } from "@/components/shopify-finder";
 
 export default function Dashboard() {
+  const [mainTab, setMainTab] = useState<"extract" | "shopify">("extract");
   const [inputMode, setInputMode] = useState<"single" | "batch">("batch");
   const [singleUrl, setSingleUrl] = useState("");
   const [batchUrls, setBatchUrls] = useState("");
@@ -343,7 +346,7 @@ export default function Dashboard() {
       <Navbar />
       
       <main className="flex-1 container mx-auto px-4 pt-20 sm:pt-24 pb-8 sm:pb-12 max-w-full overflow-x-hidden">
-        {stats && (
+        {stats && mainTab === "extract" && (
           <LimitReachedBanner
             onUpgrade={() => setUpgradeDialogOpen(true)}
             emailsUsed={stats.emailsExtracted}
@@ -353,7 +356,28 @@ export default function Dashboard() {
           />
         )}
         
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="mb-6">
+          <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as "extract" | "shopify")}>
+            <TabsList className="grid w-full sm:w-auto grid-cols-2 min-h-[48px]">
+              <TabsTrigger value="extract" className="min-h-[44px] gap-2" data-testid="tab-extract-emails">
+                <Mail className="w-4 h-4" />
+                <span className="hidden sm:inline">Extract Emails</span>
+                <span className="sm:hidden">Emails</span>
+              </TabsTrigger>
+              <TabsTrigger value="shopify" className="min-h-[44px] gap-2" data-testid="tab-shopify-stores">
+                <Store className="w-4 h-4" />
+                <span className="hidden sm:inline">Shopify Stores</span>
+                <span className="sm:hidden">Shopify</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {mainTab === "shopify" ? (
+          <ShopifyFinder onUpgrade={() => setUpgradeDialogOpen(true)} />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
           <Card className="lg:col-span-3 border-border/50 bg-card/50 backdrop-blur-sm">
             <CardHeader className="pb-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -871,8 +895,10 @@ export default function Dashboard() {
                 })}
               </div>
             )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          </>
+        )}
       </main>
       
       <UpgradeDialog

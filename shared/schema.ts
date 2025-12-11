@@ -9,6 +9,8 @@ export const userSchema = z.object({
   plan: z.string().default("free"),
   emailsExtracted: z.number().default(0),
   linksScanned: z.number().default(0),
+  shopifyStoresUsedToday: z.number().default(0),
+  shopifyLastResetDate: z.string().optional(),
   isEmailVerified: z.boolean().default(false),
   verificationCode: z.string().optional(),
   verificationCodeExpiry: z.date().optional(),

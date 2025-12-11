@@ -28,6 +28,7 @@ const plans = [
     features: [
       "1,000 Links Scanned",
       "1,000 Emails Extracted",
+      "100 Shopify Stores/Day",
       "High Speed Priority",
       "CSV & JSON Export",
       "Email Support",
@@ -44,6 +45,7 @@ const plans = [
     features: [
       "Unlimited Links",
       "Unlimited Emails",
+      "1,000 Shopify Stores/Day",
       "Maximum Speed",
       "API Access",
       "Dedicated Support",

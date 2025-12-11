@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertUserSchema } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { extractEmailsFromUrl } from "./lib/email-extractor";
+import { findShopifyStores, SHOPIFY_PLAN_LIMITS } from "./lib/shopify-finder";
 import { signToken, verifyToken } from "./lib/jwt";
 import {
   sendVerificationEmail,
@@ -1025,6 +1026,103 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to verify payment" });
+    }
+  });
+
+  // Shopify Store Finder endpoints
+  app.get("/api/shopify/usage", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const usedToday = await storage.getShopifyUsageToday(userId);
+      const limit = SHOPIFY_PLAN_LIMITS[user.plan as keyof typeof SHOPIFY_PLAN_LIMITS] ?? 0;
+
+      res.json({
+        usedToday,
+        dailyLimit: limit,
+        remaining: Math.max(0, limit - usedToday),
+        plan: user.plan,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get usage" });
+    }
+  });
+
+  app.post("/api/shopify/find", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const { language, currency, publishedDate, hasEmail, hasPhone, maxResults } = req.body;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const limit = SHOPIFY_PLAN_LIMITS[user.plan as keyof typeof SHOPIFY_PLAN_LIMITS] ?? 0;
+
+      if (limit === 0) {
+        return res.status(403).json({
+          error: "Shopify store finder is only available for Basic and Premium plans. Please upgrade to access this feature.",
+          requiresUpgrade: true,
+        });
+      }
+
+      const usedToday = await storage.getShopifyUsageToday(userId);
+      const remaining = limit - usedToday;
+
+      if (remaining <= 0) {
+        return res.status(403).json({
+          error: "Daily Shopify store limit reached. Please try again tomorrow or upgrade your plan.",
+          limitReached: true,
+          usedToday,
+          dailyLimit: limit,
+        });
+      }
+
+      const requestedResults = Math.min(maxResults || 10, remaining, 100);
+
+      const result = await findShopifyStores({
+        language,
+        currency,
+        publishedDate,
+        hasEmail: hasEmail ?? true,
+        hasPhone,
+        maxResults: requestedResults,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to find Shopify stores" });
+      }
+
+      await storage.updateShopifyUsage(userId, result.totalFound);
+
+      const newUsedToday = usedToday + result.totalFound;
+
+      res.json({
+        success: true,
+        stores: result.stores,
+        totalFound: result.totalFound,
+        usage: {
+          usedToday: newUsedToday,
+          dailyLimit: limit,
+          remaining: limit - newUsedToday,
+        },
+      });
+    } catch (error: any) {
+      console.error("[ShopifyAPI] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to find Shopify stores" });
     }
   });
 

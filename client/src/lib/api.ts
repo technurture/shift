@@ -29,6 +29,33 @@ export interface Stats {
   linksLimit: number;
 }
 
+export interface ShopifyStore {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  emails: string[];
+  country?: string;
+  currency?: string;
+  language?: string;
+  productCount?: { min: number; max: number };
+  createdDate?: string;
+}
+
+export interface ShopifyUsage {
+  usedToday: number;
+  dailyLimit: number;
+  remaining: number;
+  plan: string;
+}
+
+export interface ShopifyFindResult {
+  success: boolean;
+  stores: ShopifyStore[];
+  totalFound: number;
+  usage: ShopifyUsage;
+}
+
 class ApiClient {
   private baseUrl = "/api";
 
@@ -182,6 +209,22 @@ class ApiClient {
 
   async getStats() {
     return this.request<Stats>("/stats");
+  }
+
+  // Shopify Store Finder
+  async getShopifyUsage() {
+    return this.request<ShopifyUsage>("/shopify/usage");
+  }
+
+  async findShopifyStores(params: {
+    language?: string;
+    currency?: string;
+    maxResults: number;
+  }) {
+    return this.request<ShopifyFindResult>("/shopify/find", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
   }
 }
 
