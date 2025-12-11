@@ -1,6 +1,6 @@
 import { ApifyClient } from 'apify-client';
 
-const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
+const APIFY_TOKEN = process.env.APIFY_TOKEN;
 
 interface ShopifyStore {
   id: string;
