@@ -155,11 +155,14 @@ export default function Home() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30 text-red-400 text-sm font-bold mb-6"
+              className="inline-flex flex-col items-center gap-1 px-6 py-3 rounded-2xl bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30 mb-6"
             >
-              <Sparkles className="w-4 h-4" />
-              LIMITED TIME PROMO - Up to 40% OFF
-              <Sparkles className="w-4 h-4" />
+              <div className="flex items-center gap-2 text-red-400 text-sm font-bold">
+                <Sparkles className="w-4 h-4" />
+                LIMITED TIME PROMO - Up to 40% OFF
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <span className="text-xs text-orange-300/80">Offer ends December 31st, 2025</span>
             </motion.div>
             <h2 className="text-3xl md:text-4xl font-heading font-bold text-white mb-4">Simple, Transparent Pricing</h2>
             <p className="text-muted-foreground">Start for free, upgrade as you grow. Now with Shopify Store Finder!</p>
