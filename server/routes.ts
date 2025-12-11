@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertUserSchema } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { extractEmailsFromUrl } from "./lib/email-extractor";
+import { findShopifyStores, SHOPIFY_PLAN_LIMITS } from "./lib/shopify-finder";
 import { signToken, verifyToken } from "./lib/jwt";
 import {
   sendVerificationEmail,
@@ -11,7 +12,17 @@ import {
   sendPasswordResetEmail,
   sendPlanUpgradeEmail,
   sendContactEmail,
+  sendPaymentSuccessEmail,
 } from "./lib/email";
+import {
+  initializeTransaction,
+  verifyTransaction,
+  calculateExpiryDate,
+  getDaysUntilExpiry,
+  PLAN_PRICES,
+  PAYSTACK_PUBLIC_KEY,
+  validatePaystackSignature,
+} from "./lib/paystack";
 
 function generateVerificationCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -97,19 +108,19 @@ export async function registerRoutes(
       const { email, password } = req.body;
       
       if (!email || !password) {
-        return res.status(400).json({ error: "Email and password required" });
+        return res.status(400).json({ error: "Please enter both your email address and password to sign in." });
       }
       
       // Get user
       const user = await storage.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "We couldn't find an account with that email address. Please check your email or sign up for a new account." });
       }
       
       // Check password
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "The password you entered is incorrect. Please try again or reset your password if you've forgotten it." });
       }
       
       // Set session for web
@@ -168,19 +179,19 @@ export async function registerRoutes(
       const { email, password } = req.body;
       
       if (!email || !password) {
-        return res.status(400).json({ error: "Email and password required" });
+        return res.status(400).json({ error: "Please enter both your email address and password to sign in." });
       }
       
       // Get user
       const user = await storage.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "We couldn't find an account with that email address. Please check your email or sign up for a new account." });
       }
       
       // Check password
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
-        return res.status(401).json({ error: "Invalid credentials" });
+        return res.status(401).json({ error: "The password you entered is incorrect. Please try again or reset your password if you've forgotten it." });
       }
       
       // Generate JWT token for mobile
@@ -1025,6 +1036,435 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to verify payment" });
+    }
+  });
+
+  // Shopify Store Finder endpoints
+  app.get("/api/shopify/usage", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const usedToday = await storage.getShopifyUsageToday(userId);
+      const limit = SHOPIFY_PLAN_LIMITS[user.plan as keyof typeof SHOPIFY_PLAN_LIMITS] ?? 0;
+
+      res.json({
+        usedToday,
+        dailyLimit: limit,
+        remaining: Math.max(0, limit - usedToday),
+        plan: user.plan,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get usage" });
+    }
+  });
+
+  app.post("/api/shopify/find", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const { language, currency, publishedDate, hasEmail, hasPhone, maxResults } = req.body;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const limit = SHOPIFY_PLAN_LIMITS[user.plan as keyof typeof SHOPIFY_PLAN_LIMITS] ?? 0;
+
+      if (limit === 0) {
+        return res.status(403).json({
+          error: "Shopify store finder is only available for Basic and Premium plans. Please upgrade to access this feature.",
+          requiresUpgrade: true,
+        });
+      }
+
+      const usedToday = await storage.getShopifyUsageToday(userId);
+      const remaining = limit - usedToday;
+
+      if (remaining <= 0) {
+        return res.status(403).json({
+          error: "Daily Shopify store limit reached. Please try again tomorrow or upgrade your plan.",
+          limitReached: true,
+          usedToday,
+          dailyLimit: limit,
+        });
+      }
+
+      const requestedResults = Math.min(maxResults || 10, remaining, 100);
+
+      const result = await findShopifyStores({
+        language,
+        currency,
+        publishedDate,
+        hasEmail: hasEmail ?? true,
+        hasPhone,
+        maxResults: requestedResults,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to find Shopify stores" });
+      }
+
+      await storage.updateShopifyUsage(userId, result.totalFound);
+
+      // Save search to history
+      const savedSearch = await storage.createShopifySearch({
+        userId,
+        filters: {
+          language: language || undefined,
+          currency: currency || undefined,
+          maxResults: requestedResults,
+        },
+        stores: result.stores.map(store => ({
+          id: store.id,
+          title: store.title,
+          url: store.url,
+          emails: store.emails,
+          country: store.country,
+          currency: store.currency,
+        })),
+        totalFound: result.totalFound,
+      });
+
+      const newUsedToday = usedToday + result.totalFound;
+
+      res.json({
+        success: true,
+        stores: result.stores,
+        totalFound: result.totalFound,
+        searchId: savedSearch.id,
+        usage: {
+          usedToday: newUsedToday,
+          dailyLimit: limit,
+          remaining: limit - newUsedToday,
+        },
+      });
+    } catch (error: any) {
+      console.error("[ShopifyAPI] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to find Shopify stores" });
+    }
+  });
+
+  // Get Shopify search history
+  app.get("/api/shopify/searches", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const searches = await storage.getShopifySearchesByUser(userId);
+      res.json(searches);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get search history" });
+    }
+  });
+
+  // Delete a Shopify search from history
+  app.delete("/api/shopify/searches/:id", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      await storage.deleteShopifySearch(req.params.id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete search" });
+    }
+  });
+
+  // ==================== SUBSCRIPTION ROUTES ====================
+
+  // Get subscription status
+  app.get("/api/subscription/status", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const daysRemaining = user.planExpiresAt 
+        ? getDaysUntilExpiry(new Date(user.planExpiresAt)) 
+        : null;
+
+      const monthlyUsed = (user.monthlyEmailsUsed || 0) + (user.monthlyLinksScanned || 0);
+      const monthlyLimit = user.plan === "basic" ? 1000 : user.plan === "premium" ? -1 : 500;
+
+      res.json({
+        plan: user.plan,
+        planStatus: user.planStatus || "active",
+        planStartDate: user.planStartDate,
+        planExpiresAt: user.planExpiresAt,
+        daysRemaining,
+        monthlyUsed,
+        monthlyLimit,
+        isExpiringSoon: daysRemaining !== null && daysRemaining <= 10 && daysRemaining > 0,
+        isExpired: daysRemaining !== null && daysRemaining <= 0,
+        paystackPublicKey: PAYSTACK_PUBLIC_KEY,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get subscription status" });
+    }
+  });
+
+  // Initialize payment for subscription
+  app.post("/api/subscription/initialize", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const { plan } = req.body;
+
+      if (!plan || !["basic", "premium"].includes(plan)) {
+        return res.status(400).json({ error: "Invalid plan. Choose 'basic' or 'premium'" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const planDetails = PLAN_PRICES[plan as keyof typeof PLAN_PRICES];
+      const callbackUrl = `${req.protocol}://${req.get("host")}/api/subscription/verify`;
+
+      const transaction = await initializeTransaction(
+        user.email,
+        planDetails.amount,
+        userId,
+        plan as "basic" | "premium",
+        callbackUrl
+      );
+
+      res.json({
+        authorizationUrl: transaction.authorization_url,
+        accessCode: transaction.access_code,
+        reference: transaction.reference,
+        amount: planDetails.amount / 100,
+        planName: planDetails.name,
+      });
+    } catch (error: any) {
+      console.error("[Subscription] Initialize error:", error);
+      res.status(500).json({ error: error.message || "Failed to initialize payment" });
+    }
+  });
+
+  // Verify payment callback
+  app.get("/api/subscription/verify", async (req, res) => {
+    try {
+      const { reference } = req.query;
+
+      if (!reference || typeof reference !== "string") {
+        return res.redirect("/dashboard?payment=failed&error=missing_reference");
+      }
+
+      const transaction = await verifyTransaction(reference);
+
+      if (transaction.status !== "success") {
+        return res.redirect(`/dashboard?payment=failed&error=transaction_failed`);
+      }
+
+      const metadata = transaction.metadata as any;
+      const userId = metadata?.userId;
+      const plan = metadata?.plan;
+
+      if (!userId || !plan) {
+        return res.redirect("/dashboard?payment=failed&error=invalid_metadata");
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.redirect("/dashboard?payment=failed&error=user_not_found");
+      }
+
+      const now = new Date();
+      const expiresAt = calculateExpiryDate(now);
+
+      await storage.updateSubscription(userId, {
+        plan,
+        planStartDate: now,
+        planExpiresAt: expiresAt,
+        planStatus: "active",
+        monthlyEmailsUsed: 0,
+        monthlyLinksScanned: 0,
+        monthlyUsageResetDate: now.toISOString().split("T")[0],
+        paystackCustomerCode: transaction.customer?.customer_code,
+      });
+
+      const planDetails = PLAN_PRICES[plan as keyof typeof PLAN_PRICES];
+      const amountFormatted = `NGN ${(planDetails.amount / 100).toLocaleString()}`;
+
+      await sendPaymentSuccessEmail(
+        user.email,
+        user.firstName,
+        plan,
+        amountFormatted,
+        expiresAt
+      );
+
+      await storage.createNotification({
+        userId,
+        type: "payment_success",
+        title: "Payment Successful",
+        message: `Your ${plan} plan is now active and will expire on ${expiresAt.toLocaleDateString()}.`,
+      });
+
+      res.redirect(`/dashboard?payment=success&plan=${plan}`);
+    } catch (error: any) {
+      console.error("[Subscription] Verify error:", error);
+      res.redirect(`/dashboard?payment=failed&error=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Paystack webhook
+  app.post("/api/subscription/webhook", async (req, res) => {
+    try {
+      const signature = req.headers["x-paystack-signature"] as string | undefined;
+      const rawBody = (req as any).rawBody;
+      
+      if (!rawBody || !validatePaystackSignature(rawBody, signature)) {
+        console.log("[Webhook] Invalid signature - rejecting request");
+        return res.status(400).json({ error: "Invalid signature" });
+      }
+
+      const event = req.body;
+
+      console.log("[Webhook] Received:", event.event);
+
+      if (event.event === "charge.success") {
+        const data = event.data;
+        const metadata = data.metadata as any;
+        const userId = metadata?.userId;
+        const plan = metadata?.plan;
+
+        if (userId && plan) {
+          const now = new Date();
+          const expiresAt = calculateExpiryDate(now);
+
+          await storage.updateSubscription(userId, {
+            plan,
+            planStartDate: now,
+            planExpiresAt: expiresAt,
+            planStatus: "active",
+            monthlyEmailsUsed: 0,
+            monthlyLinksScanned: 0,
+            monthlyUsageResetDate: now.toISOString().split("T")[0],
+            paystackCustomerCode: data.customer?.customer_code,
+          });
+
+          const user = await storage.getUser(userId);
+          if (user) {
+            const planDetails = PLAN_PRICES[plan as keyof typeof PLAN_PRICES];
+            const amountFormatted = `NGN ${(planDetails.amount / 100).toLocaleString()}`;
+            
+            await sendPaymentSuccessEmail(
+              user.email,
+              user.firstName,
+              plan,
+              amountFormatted,
+              expiresAt
+            );
+
+            await storage.createNotification({
+              userId,
+              type: "payment_success",
+              title: "Payment Successful",
+              message: `Your ${plan} plan is now active and will expire on ${expiresAt.toLocaleDateString()}.`,
+            });
+          }
+
+          console.log(`[Webhook] Updated subscription for user ${userId} to ${plan}`);
+        }
+      }
+
+      res.status(200).json({ received: true });
+    } catch (error: any) {
+      console.error("[Webhook] Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get notifications
+  app.get("/api/notifications", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const notifications = await storage.getNotificationsByUser(userId);
+      const unreadCount = await storage.getUnreadNotificationsCount(userId);
+
+      res.json({
+        notifications,
+        unreadCount,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get notifications" });
+    }
+  });
+
+  // Mark notification as read
+  app.patch("/api/notifications/:id/read", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      await storage.markNotificationAsRead(req.params.id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to mark notification as read" });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/notifications/read-all", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      await storage.markAllNotificationsAsRead(userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to mark notifications as read" });
+    }
+  });
+
+  // Delete notification
+  app.delete("/api/notifications/:id", async (req, res) => {
+    const userId = await getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      await storage.deleteNotification(req.params.id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete notification" });
     }
   });
 

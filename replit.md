@@ -6,6 +6,14 @@ MilkTheLink is a web and mobile application designed to extract email addresses 
 
 ## Recent Changes (December 2025)
 
+- **NEW: Shopify Store Finder** - Find live Shopify stores with email leads using Apify integration
+  - Filter by language and currency
+  - Daily limits: Basic (100 stores/day), Premium (1000 stores/day)
+  - Export results to CSV, copy emails/URLs
+  - Available in dashboard via "Shopify Stores" tab
+  - Search history stored in MongoDB with view/delete functionality
+  - Pagination for search results (10/25/50/100 per page)
+- **Pagination** - Added full pagination to email extraction history with configurable items per page
 - Added user settings page with profile update, password change, and account deletion
 - Added dropdown menu in navbar for logged-in users (Settings and Sign Out)
 - Added mobile menu Settings link for mobile navigation

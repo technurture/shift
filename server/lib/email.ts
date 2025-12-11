@@ -287,6 +287,164 @@ export async function sendPlanUpgradeEmail(
   return sendEmail(email, `Your ${BRAND_NAME} account has been upgraded to ${planDisplay}!`, getEmailWrapper(content));
 }
 
+export async function sendSubscriptionReminderEmail(
+  email: string,
+  firstName: string,
+  plan: string,
+  daysRemaining: number
+): Promise<{ success: boolean; error?: string }> {
+  const planDisplay = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const content = `
+    <h2 style="margin: 0 0 16px 0; color: #111827; font-size: 24px; font-weight: 600;">
+      Your ${planDisplay} Plan Expires Soon
+    </h2>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      Hi ${firstName},
+    </p>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      Your ${BRAND_NAME} ${planDisplay} subscription will expire in <strong style="color: #dc2626;">${daysRemaining} days</strong>. 
+      To continue enjoying all your premium features without interruption, please renew your subscription.
+    </p>
+    <div style="background-color: #fef3c7; border-radius: 8px; padding: 20px; margin: 24px 0; border-left: 4px solid #f59e0b;">
+      <p style="margin: 0; color: #92400e; font-size: 14px;">
+        <strong>Important:</strong> If you don't renew before your subscription expires, your account will be downgraded to the free Starter plan and you'll lose access to premium features.
+      </p>
+    </div>
+    <div style="text-align: center;">
+      ${getButton("Renew Now")}
+    </div>
+    <p style="margin: 24px 0 0 0; color: #6b7280; font-size: 14px;">
+      Thank you for being a valued ${BRAND_NAME} member!
+    </p>
+  `;
+
+  return sendEmail(email, `Action Required: Your ${BRAND_NAME} ${planDisplay} plan expires in ${daysRemaining} days`, getEmailWrapper(content));
+}
+
+export async function sendPlanExpiredEmail(
+  email: string,
+  firstName: string,
+  previousPlan: string
+): Promise<{ success: boolean; error?: string }> {
+  const planDisplay = previousPlan.charAt(0).toUpperCase() + previousPlan.slice(1);
+  const content = `
+    <h2 style="margin: 0 0 16px 0; color: #111827; font-size: 24px; font-weight: 600;">
+      Your ${planDisplay} Plan Has Expired
+    </h2>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      Hi ${firstName},
+    </p>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      Your ${BRAND_NAME} ${planDisplay} subscription has expired and your account has been downgraded to the free Starter plan.
+    </p>
+    <div style="background-color: #fee2e2; border-radius: 8px; padding: 20px; margin: 24px 0; border-left: 4px solid #dc2626;">
+      <p style="margin: 0; color: #991b1b; font-size: 14px;">
+        <strong>What this means:</strong> You now have limited access to features. Your extraction limit is reduced to 500 links and emails, and you no longer have access to the Shopify Store Finder.
+      </p>
+    </div>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      To restore your premium features and continue where you left off, resubscribe to your plan today.
+    </p>
+    <div style="text-align: center;">
+      ${getButton("Resubscribe Now")}
+    </div>
+    <p style="margin: 24px 0 0 0; color: #6b7280; font-size: 14px;">
+      We'd love to have you back as a premium member!
+    </p>
+  `;
+
+  return sendEmail(email, `Your ${BRAND_NAME} ${planDisplay} plan has expired`, getEmailWrapper(content));
+}
+
+export async function sendPaymentSuccessEmail(
+  email: string,
+  firstName: string,
+  plan: string,
+  amount: string,
+  expiresAt: Date
+): Promise<{ success: boolean; error?: string }> {
+  const planDisplay = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const expiryDate = expiresAt.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  
+  const content = `
+    <h2 style="margin: 0 0 16px 0; color: #111827; font-size: 24px; font-weight: 600;">
+      Payment Successful!
+    </h2>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      Hi ${firstName},
+    </p>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      Thank you for your payment! Your ${BRAND_NAME} ${planDisplay} subscription is now active.
+    </p>
+    <div style="background-color: #f0fdf4; border-radius: 8px; padding: 24px; margin: 24px 0; border: 1px solid #86efac;">
+      <h3 style="margin: 0 0 16px 0; color: #166534; font-size: 18px; font-weight: 600;">
+        Payment Details
+      </h3>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Plan:</td>
+          <td style="padding: 8px 0; color: #111827; font-size: 16px; font-weight: 600;">${planDisplay}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Amount Paid:</td>
+          <td style="padding: 8px 0; color: #111827; font-size: 16px; font-weight: 600;">${amount}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Valid Until:</td>
+          <td style="padding: 8px 0; color: #111827; font-size: 16px; font-weight: 600;">${expiryDate}</td>
+        </tr>
+      </table>
+    </div>
+    <div style="text-align: center;">
+      ${getButton("Go to Dashboard")}
+    </div>
+    <p style="margin: 24px 0 0 0; color: #6b7280; font-size: 14px;">
+      Thank you for choosing ${BRAND_NAME}!
+    </p>
+  `;
+
+  return sendEmail(email, `Payment Confirmed - ${BRAND_NAME} ${planDisplay}`, getEmailWrapper(content));
+}
+
+export async function sendUsageLimitEmail(
+  email: string,
+  firstName: string,
+  plan: string,
+  usedCount: number,
+  limitCount: number
+): Promise<{ success: boolean; error?: string }> {
+  const planDisplay = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const content = `
+    <h2 style="margin: 0 0 16px 0; color: #111827; font-size: 24px; font-weight: 600;">
+      You've Reached Your Monthly Limit
+    </h2>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      Hi ${firstName},
+    </p>
+    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+      You've used ${usedCount} out of ${limitCount} links/emails included in your ${planDisplay} plan this month.
+    </p>
+    <div style="background-color: #fef3c7; border-radius: 8px; padding: 20px; margin: 24px 0; border-left: 4px solid #f59e0b;">
+      <p style="margin: 0; color: #92400e; font-size: 14px;">
+        <strong>To continue extracting:</strong> Upgrade to the Premium plan for unlimited extractions, or wait until your current billing cycle resets.
+      </p>
+    </div>
+    <div style="text-align: center;">
+      ${getButton("Upgrade to Premium")}
+    </div>
+    <p style="margin: 24px 0 0 0; color: #6b7280; font-size: 14px;">
+      Need help? Contact our support team anytime.
+    </p>
+  `;
+
+  return sendEmail(email, `${BRAND_NAME}: Monthly limit reached`, getEmailWrapper(content));
+}
+
 export async function sendContactEmail(
   name: string,
   email: string,
