@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,17 +12,83 @@ import { useToast } from "@/hooks/use-toast";
 
 type AuthView = "login" | "signup" | "verify-email" | "forgot-password" | "reset-password";
 
+const AUTH_STATE_KEY = "mtl_auth_state";
+const AUTH_STATE_TTL = 15 * 60 * 1000; // 15 minutes in milliseconds
+
+interface PersistedAuthState {
+  view: AuthView;
+  email: string;
+  timestamp: number;
+}
+
+function saveAuthState(state: Omit<PersistedAuthState, "timestamp">) {
+  try {
+    const data: PersistedAuthState = {
+      ...state,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(AUTH_STATE_KEY, JSON.stringify(data));
+  } catch (e) {
+    // localStorage might be unavailable
+  }
+}
+
+function loadAuthState(): PersistedAuthState | null {
+  try {
+    const saved = localStorage.getItem(AUTH_STATE_KEY);
+    if (!saved) return null;
+    
+    const data: PersistedAuthState = JSON.parse(saved);
+    
+    // Check if state has expired (15 minutes)
+    if (Date.now() - data.timestamp > AUTH_STATE_TTL) {
+      localStorage.removeItem(AUTH_STATE_KEY);
+      return null;
+    }
+    
+    // Only restore verify-email or reset-password views
+    if (data.view !== "verify-email" && data.view !== "reset-password") {
+      localStorage.removeItem(AUTH_STATE_KEY);
+      return null;
+    }
+    
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearAuthState() {
+  try {
+    localStorage.removeItem(AUTH_STATE_KEY);
+  } catch (e) {
+    // localStorage might be unavailable
+  }
+}
+
 function getInitialView(): AuthView {
+  // First check for persisted state (for mobile users returning from email)
+  const savedState = loadAuthState();
+  if (savedState) {
+    return savedState.view;
+  }
+  
+  // Then check URL params
   const searchParams = new URLSearchParams(window.location.search);
   const mode = searchParams.get("mode");
   return mode === "signup" ? "signup" : "login";
+}
+
+function getInitialEmail(): string {
+  const savedState = loadAuthState();
+  return savedState?.email || "";
 }
 
 export default function AuthPage() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [view, setView] = useState<AuthView>(getInitialView);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(getInitialEmail);
   const [verificationCode, setVerificationCode] = useState(["", "", "", "", "", ""]);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
@@ -104,6 +170,8 @@ export default function AuthPage() {
     try {
       await api.signup({ email: signupEmail, password, firstName, lastName });
       setEmail(signupEmail);
+      // Save state for mobile users who might leave to check email
+      saveAuthState({ view: "verify-email", email: signupEmail });
       toast({
         title: "Account created!",
         description: "Please check your email for a verification code.",
@@ -137,6 +205,8 @@ export default function AuthPage() {
     
     try {
       await api.verifyEmail({ email, code });
+      // Clear persisted state on success
+      clearAuthState();
       toast({
         title: "Email verified!",
         description: "Your email has been successfully verified.",
@@ -182,6 +252,8 @@ export default function AuthPage() {
     try {
       await api.forgotPassword(forgotEmail);
       setEmail(forgotEmail);
+      // Save state for mobile users who might leave to check email
+      saveAuthState({ view: "reset-password", email: forgotEmail });
       toast({
         title: "Reset code sent!",
         description: "Check your email for a password reset code.",
@@ -230,6 +302,8 @@ export default function AuthPage() {
     
     try {
       await api.resetPassword({ email, code, newPassword });
+      // Clear persisted state on success
+      clearAuthState();
       toast({
         title: "Password reset!",
         description: "Your password has been successfully reset. Please sign in.",
@@ -252,7 +326,11 @@ export default function AuthPage() {
       type="button"
       variant="ghost"
       className="mb-4"
-      onClick={() => setView(targetView)}
+      onClick={() => {
+        // Clear persisted state when user abandons verification flow
+        clearAuthState();
+        setView(targetView);
+      }}
       data-testid="button-back"
     >
       <ArrowLeft className="mr-2 h-4 w-4" />
