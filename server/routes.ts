@@ -28,10 +28,6 @@ function generateVerificationCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-const PLAN_PRICES: Record<string, number> = {
-  basic: 5000000,
-  premium: 15000000,
-};
 
 async function getUserIdFromRequest(req: Request): Promise<string | null> {
   if (req.session?.userId) {
@@ -928,7 +924,7 @@ export async function registerRoutes(
     try {
       const { plan } = req.body;
       
-      if (!plan || !PLAN_PRICES[plan]) {
+      if (!plan || !PLAN_PRICES[plan as keyof typeof PLAN_PRICES]) {
         return res.status(400).json({ error: "Invalid plan selected" });
       }
       
@@ -954,7 +950,7 @@ export async function registerRoutes(
         },
         body: JSON.stringify({
           email: user.email,
-          amount: PLAN_PRICES[plan],
+          amount: PLAN_PRICES[plan as keyof typeof PLAN_PRICES].amount,
           callback_url: callbackUrl,
           metadata: {
             userId: user.id,
