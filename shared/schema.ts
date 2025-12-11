@@ -17,6 +17,33 @@ export const userSchema = z.object({
   resetCode: z.string().optional(),
   resetCodeExpiry: z.date().optional(),
   createdAt: z.date(),
+  // Subscription fields
+  planStartDate: z.date().optional(),
+  planExpiresAt: z.date().optional(),
+  planStatus: z.enum(["active", "expired", "cancelled"]).default("active"),
+  monthlyEmailsUsed: z.number().default(0),
+  monthlyLinksScanned: z.number().default(0),
+  monthlyUsageResetDate: z.string().optional(),
+  lastReminderSentAt: z.date().optional(),
+  paystackCustomerCode: z.string().optional(),
+  paystackSubscriptionCode: z.string().optional(),
+});
+
+export const notificationSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  type: z.enum(["subscription_reminder", "plan_expired", "usage_limit", "upgrade_prompt", "payment_success", "payment_failed"]),
+  title: z.string(),
+  message: z.string(),
+  isRead: z.boolean().default(false),
+  createdAt: z.date(),
+});
+
+export const insertNotificationSchema = z.object({
+  userId: z.string(),
+  type: z.enum(["subscription_reminder", "plan_expired", "usage_limit", "upgrade_prompt", "payment_success", "payment_failed"]),
+  title: z.string(),
+  message: z.string(),
 });
 
 export const extractionSchema = z.object({
@@ -82,3 +109,5 @@ export type InsertExtraction = z.infer<typeof insertExtractionSchema>;
 export type ShopifyStore = z.infer<typeof shopifyStoreSchema>;
 export type ShopifySearch = z.infer<typeof shopifySearchSchema>;
 export type InsertShopifySearch = z.infer<typeof insertShopifySearchSchema>;
+export type Notification = z.infer<typeof notificationSchema>;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;

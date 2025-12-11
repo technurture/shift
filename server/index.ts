@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import dotenv from "dotenv";
+import { startSubscriptionCron } from "./lib/subscription-cron";
 
 dotenv.config();
 
@@ -127,6 +128,8 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      
+      startSubscriptionCron();
     },
   );
 })();

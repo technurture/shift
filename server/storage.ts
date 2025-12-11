@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "./db";
-import type { User, InsertUser, Extraction, InsertExtraction, ShopifySearch, InsertShopifySearch } from "@shared/schema";
+import type { User, InsertUser, Extraction, InsertExtraction, ShopifySearch, InsertShopifySearch, Notification, InsertNotification } from "@shared/schema";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -26,6 +26,32 @@ export interface IStorage {
   createShopifySearch(search: InsertShopifySearch): Promise<ShopifySearch>;
   getShopifySearchesByUser(userId: string): Promise<ShopifySearch[]>;
   deleteShopifySearch(id: string, userId: string): Promise<void>;
+  
+  // Notification methods
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  getNotificationsByUser(userId: string): Promise<Notification[]>;
+  getUnreadNotificationsCount(userId: string): Promise<number>;
+  markNotificationAsRead(id: string, userId: string): Promise<void>;
+  markAllNotificationsAsRead(userId: string): Promise<void>;
+  deleteNotification(id: string, userId: string): Promise<void>;
+  
+  // Subscription methods
+  getUsersWithExpiringPlans(daysUntilExpiry: number): Promise<User[]>;
+  getUsersWithExpiredPlans(): Promise<User[]>;
+  updateSubscription(userId: string, updates: {
+    plan: string;
+    planStartDate?: Date;
+    planExpiresAt?: Date;
+    planStatus?: "active" | "expired" | "cancelled";
+    monthlyEmailsUsed?: number;
+    monthlyLinksScanned?: number;
+    monthlyUsageResetDate?: string;
+    lastReminderSentAt?: Date;
+    paystackCustomerCode?: string;
+    paystackSubscriptionCode?: string;
+  }): Promise<void>;
+  incrementMonthlyUsage(userId: string, emails: number, links: number): Promise<void>;
+  resetMonthlyUsage(userId: string): Promise<void>;
 }
 
 export class MongoStorage implements IStorage {
@@ -61,6 +87,9 @@ export class MongoStorage implements IStorage {
       shopifyStoresUsedToday: 0,
       isEmailVerified: false,
       createdAt: now,
+      planStatus: "active" as const,
+      monthlyEmailsUsed: 0,
+      monthlyLinksScanned: 0,
     };
     
     await users.insertOne(userDoc);
@@ -293,6 +322,144 @@ export class MongoStorage implements IStorage {
   async deleteShopifySearch(id: string, userId: string): Promise<void> {
     const { shopifySearches } = await connectToDatabase();
     await shopifySearches.deleteOne({ _id: id, userId });
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const { notifications } = await connectToDatabase();
+    const id = new ObjectId().toString();
+    const now = new Date();
+    
+    const notificationDoc = {
+      _id: id,
+      ...notification,
+      isRead: false,
+      createdAt: now,
+    };
+    
+    await notifications.insertOne(notificationDoc);
+    
+    const { _id, ...rest } = notificationDoc;
+    return { id: _id, ...rest } as Notification;
+  }
+
+  async getNotificationsByUser(userId: string): Promise<Notification[]> {
+    const { notifications } = await connectToDatabase();
+    const docs = await notifications
+      .find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .toArray();
+    
+    return docs.map((doc: any) => {
+      const { _id, ...rest } = doc;
+      return { id: _id, ...rest } as Notification;
+    });
+  }
+
+  async getUnreadNotificationsCount(userId: string): Promise<number> {
+    const { notifications } = await connectToDatabase();
+    return await notifications.countDocuments({ userId, isRead: false });
+  }
+
+  async markNotificationAsRead(id: string, userId: string): Promise<void> {
+    const { notifications } = await connectToDatabase();
+    await notifications.updateOne(
+      { _id: id, userId },
+      { $set: { isRead: true } }
+    );
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    const { notifications } = await connectToDatabase();
+    await notifications.updateMany(
+      { userId, isRead: false },
+      { $set: { isRead: true } }
+    );
+  }
+
+  async deleteNotification(id: string, userId: string): Promise<void> {
+    const { notifications } = await connectToDatabase();
+    await notifications.deleteOne({ _id: id, userId });
+  }
+
+  async getUsersWithExpiringPlans(daysUntilExpiry: number): Promise<User[]> {
+    const { users } = await connectToDatabase();
+    const now = new Date();
+    const expiryThreshold = new Date(now.getTime() + daysUntilExpiry * 24 * 60 * 60 * 1000);
+    
+    const docs = await users.find({
+      plan: { $in: ["basic", "premium"] },
+      planStatus: "active",
+      planExpiresAt: { $lte: expiryThreshold, $gt: now }
+    }).toArray();
+    
+    return docs.map(doc => {
+      const { _id, ...rest } = doc;
+      return { id: _id, ...rest } as User;
+    });
+  }
+
+  async getUsersWithExpiredPlans(): Promise<User[]> {
+    const { users } = await connectToDatabase();
+    const now = new Date();
+    
+    const docs = await users.find({
+      plan: { $in: ["basic", "premium"] },
+      planStatus: "active",
+      planExpiresAt: { $lt: now }
+    }).toArray();
+    
+    return docs.map(doc => {
+      const { _id, ...rest } = doc;
+      return { id: _id, ...rest } as User;
+    });
+  }
+
+  async updateSubscription(userId: string, updates: {
+    plan: string;
+    planStartDate?: Date;
+    planExpiresAt?: Date;
+    planStatus?: "active" | "expired" | "cancelled";
+    monthlyEmailsUsed?: number;
+    monthlyLinksScanned?: number;
+    monthlyUsageResetDate?: string;
+    lastReminderSentAt?: Date;
+    paystackCustomerCode?: string;
+    paystackSubscriptionCode?: string;
+  }): Promise<void> {
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { $set: updates }
+    );
+  }
+
+  async incrementMonthlyUsage(userId: string, emails: number, links: number): Promise<void> {
+    const { users } = await connectToDatabase();
+    await users.updateOne(
+      { _id: userId },
+      { 
+        $inc: { 
+          monthlyEmailsUsed: emails,
+          monthlyLinksScanned: links
+        } 
+      }
+    );
+  }
+
+  async resetMonthlyUsage(userId: string): Promise<void> {
+    const { users } = await connectToDatabase();
+    const today = new Date().toISOString().split('T')[0];
+    await users.updateOne(
+      { _id: userId },
+      { 
+        $set: { 
+          monthlyEmailsUsed: 0,
+          monthlyLinksScanned: 0,
+          monthlyUsageResetDate: today
+        } 
+      }
+    );
   }
 }
 
