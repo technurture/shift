@@ -1,9 +1,11 @@
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Mail, Shield, Zap, Search, Globe, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Mail, Shield, Zap, Search, Globe, CheckCircle2, Check, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
+import { Link } from "wouter";
 
 export default function Home() {
   return (
@@ -29,6 +31,18 @@ export default function Home() {
             <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
               MilkTheLink is the industry-leading email extraction platform designed to help sales teams, recruiters, and marketers build high-quality lead lists in seconds. Our proprietary scanning technology identifies verified contact information from any public URL, ensuring your outreach is targeted and effective.
             </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link href="/auth?mode=signup">
+                <Button size="lg" className="h-12 px-8 bg-primary hover:bg-primary/90 text-white font-bold rounded-lg shadow-[0_0_30px_-10px_hsl(var(--primary))]">
+                  Start Free Trial
+                </Button>
+              </Link>
+              <a href="#pricing">
+                <Button size="lg" variant="outline" className="h-12 px-8 border-white/10 text-white hover:bg-white/5">
+                  View Pricing
+                </Button>
+              </a>
+            </div>
           </motion.div>
         </div>
       </section>
@@ -64,6 +78,84 @@ export default function Home() {
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section id="pricing" className="py-24 px-4">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-16">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="inline-flex flex-col items-center gap-1 px-6 py-3 rounded-2xl bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30 mb-6"
+            >
+              <div className="flex items-center gap-2 text-red-400 text-sm font-bold">
+                <Sparkles className="w-4 h-4" />
+                LIMITED TIME PROMO - Up to 40% OFF
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <span className="text-xs text-orange-300/80">Offer ends December 31st, 2025</span>
+            </motion.div>
+            <h2 className="text-3xl md:text-4xl font-heading font-bold text-white mb-4">Simple, Transparent Pricing</h2>
+            <p className="text-muted-foreground">Start for free, upgrade as you grow. No hidden fees.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <PricingCard 
+              title="Starter" 
+              price="$0" 
+              nairaPrice="Free"
+              description="Perfect for testing the waters"
+              features={["500 Links Scanned/day", "500 Emails Extracted/day", "Standard Speed", "CSV Export"]}
+              cta="Start Free"
+              variant="outline"
+            />
+
+            <PricingCard 
+              title="Basic" 
+              price="$29" 
+              originalPrice="$50"
+              nairaPrice="45,000 NGN"
+              originalNairaPrice="75,000 NGN"
+              period="/mo"
+              description="For serious individual prospectors"
+              features={[
+                "1,000 Links Scanned/day",
+                "1,000 Emails Extracted/day",
+                "50 Shopify Stores/day",
+                "High Speed Priority",
+                "CSV & JSON Export",
+                "Email Support"
+              ]}
+              cta="Get Basic - Save 40%"
+              popular
+              variant="primary"
+              promo
+            />
+
+            <PricingCard 
+              title="Premium" 
+              price="$99" 
+              originalPrice="$150"
+              nairaPrice="150,000 NGN"
+              originalNairaPrice="225,000 NGN"
+              period="/mo"
+              description="Powerhouse for sales teams"
+              features={[
+                "Unlimited Links/day",
+                "Unlimited Emails/day",
+                "Unlimited Shopify Stores/day",
+                "Maximum Speed",
+                "API Access",
+                "Dedicated Support"
+              ]}
+              cta="Get Premium - Save 34%"
+              variant="outline"
+              promo
+            />
           </div>
         </div>
       </section>
@@ -141,5 +233,59 @@ function FeatureItem({ icon, title, description }: { icon: React.ReactNode, titl
         <p className="text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function PricingCard({ title, price, originalPrice, nairaPrice, originalNairaPrice, period = "", description, features, cta, popular, variant, promo }: any) {
+  return (
+    <div className={`relative p-8 rounded-3xl border flex flex-col ${popular ? 'bg-white/5 border-primary shadow-[0_0_40px_-10px_rgba(124,58,237,0.3)]' : 'bg-background border-white/10'}`} data-testid={`card-pricing-${title.toLowerCase()}`}>
+      {popular && (
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-primary to-purple-500 text-white px-4 py-1 rounded-full text-sm font-bold shadow-lg">
+          Most Popular
+        </div>
+      )}
+      {promo && !popular && (
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-red-500 to-orange-500 text-white px-4 py-1 rounded-full text-sm font-bold shadow-lg">
+          PROMO
+        </div>
+      )}
+      <div className="mb-8">
+        <h3 className="text-lg font-medium text-muted-foreground mb-2">{title}</h3>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="text-4xl font-bold text-white" data-testid={`text-price-usd-${title.toLowerCase()}`}>{price}</span>
+            {originalPrice && (
+              <span className="text-xl text-muted-foreground line-through" data-testid={`text-original-price-usd-${title.toLowerCase()}`}>{originalPrice}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-semibold text-primary/80" data-testid={`text-price-ngn-${title.toLowerCase()}`}>{nairaPrice}</span>
+            {originalNairaPrice && (
+              <span className="text-sm text-muted-foreground line-through">{originalNairaPrice}</span>
+            )}
+          </div>
+          {period && <span className="text-muted-foreground text-sm">{period}</span>}
+        </div>
+        <p className="text-sm text-muted-foreground mt-2">{description}</p>
+      </div>
+      <div className="flex-1 mb-8">
+        <ul className="space-y-4">
+          {features.map((feature: string, i: number) => (
+            <li key={i} className="flex items-start gap-3 text-sm text-gray-300">
+              <Check className="w-5 h-5 text-secondary shrink-0" />
+              {feature}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <Link href="/auth?mode=signup">
+        <Button 
+          className={`w-full h-12 font-bold ${popular ? 'bg-primary hover:bg-primary/90 text-white' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+          data-testid={`button-cta-${title.toLowerCase()}`}
+        >
+          {cta}
+        </Button>
+      </Link>
+    </div>
   );
 }
