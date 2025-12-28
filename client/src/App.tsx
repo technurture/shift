@@ -11,6 +11,8 @@ import AuthPage from "@/pages/auth";
 import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
 import PaymentCallback from "@/pages/payment-callback";
+import PrivacyPolicy from "@/pages/privacy";
+import TermsOfService from "@/pages/terms";
 
 function Router() {
   return (
@@ -21,6 +23,8 @@ function Router() {
       <Route path="/profile" component={Profile} />
       <Route path="/settings" component={Settings} />
       <Route path="/payment/callback" component={PaymentCallback} />
+      <Route path="/privacy" component={PrivacyPolicy} />
+      <Route path="/terms" component={TermsOfService} />
       <Route component={NotFound} />
     </Switch>
   );
